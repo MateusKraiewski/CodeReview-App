@@ -20,6 +20,8 @@ from . import __version__
 REPO = "MateusKraiewski/CodeReview-App"
 API_LATEST = f"https://api.github.com/repos/{REPO}/releases/latest"
 RELEASES_PAGE = f"https://github.com/{REPO}/releases/latest"
+# log do instalador na última atualização, para investigar quando ela falha
+LOG_FILE = Path(tempfile.gettempdir()) / "CodeReviewLocal-atualizacao.log"
 SETUP_ASSET = re.compile(r"^CodeReviewLocal-Setup-.*\.exe$", re.I)
 
 
@@ -88,5 +90,5 @@ def download(url: str, progress: Callable[[float], None] | None = None) -> Path:
 
 def run_installer(setup: Path) -> None:
     """Executa o instalador em modo silencioso; ele fecha o app, atualiza e abre de novo."""
-    subprocess.Popen([str(setup), "/SILENT", "/SUPPRESSMSGBOXES", "/CLOSEAPPLICATIONS", "/NORESTART"],  # noqa: S603
-                     close_fds=True)
+    subprocess.Popen([str(setup), "/SILENT", "/SUPPRESSMSGBOXES", "/CLOSEAPPLICATIONS", "/NORESTART",  # noqa: S603
+                      f"/LOG={LOG_FILE}"], close_fds=True)

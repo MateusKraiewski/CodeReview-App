@@ -79,10 +79,10 @@ Os relatórios são salvos em `Documentos\CodeReviewLocal` (configurável na tel
 
 **Linha de comando (automação/CI)**
 
-O mesmo executável aceita argumentos. Sem argumentos, ele abre a tela.
+O instalador coloca o `crlocal.exe` (versão de terminal do app) no PATH do usuário. Abra um terminal novo depois de instalar:
 
 ```bat
-"%LOCALAPPDATA%\Programs\CodeReviewLocal\CodeReviewLocal.exe" C:\projetos\MinhaApi --saida C:\relatorios --lang pt
+crlocal C:\projetos\MinhaApi --saida C:\relatorios --lang pt
 ```
 
 A partir do código-fonte, o equivalente é `python -m crlocal`:
@@ -101,6 +101,28 @@ python -m crlocal --listar
 | `--json ARQ` | exporta os achados em JSON |
 | `--resumo ARQ` | exporta a situação de cada skill (executada, pulada ou erro) em JSON |
 | `--listar` | lista as skills disponíveis |
+| `--sarif ARQ` | exporta em SARIF 2.1.0 (Visual Studio, VS Code, GitHub Code Scanning) |
+| `--problemas` | imprime `arquivo:linha:coluna: nível: mensagem`, formato que as IDEs entendem |
+| `--mcp` | inicia o servidor MCP para assistentes de IA (veja abaixo) |
+
+## Integração com IDEs
+
+A análise roda inteira na sua máquina. Nenhuma das opções abaixo gasta tokens para fazer o code review.
+
+**1. Assistente de IA da IDE (MCP).** Claude Code, GitHub Copilot (VS Code), Cursor e Windsurf chamam o CodeReview Local como uma ferramenta pelo [Model Context Protocol](https://modelcontextprotocol.io). Você pede "faz o code review deste projeto" e a IA executa o `code_review` localmente. Ela recebe só um resumo compacto (nota, severidades e os 15 achados mais graves, cerca de 1 mil tokens) em vez de ler o código inteiro para revisar. Depois pode pedir detalhes com `achados` (filtro por severidade, arquivo ou skill) sem rodar de novo. O PDF, o Markdown e o `codereview.sarif` ficam em `<projeto>\.codereview`, então adicione `.codereview/` ao `.gitignore` do projeto.
+
+| IDE | Como configurar |
+|---|---|
+| Claude Code | `claude mcp add codereview-local -- crlocal --mcp` |
+| VS Code (Copilot) | copie [ide/vscode/mcp.json](ide/vscode/mcp.json) para `.vscode/mcp.json` do projeto |
+| Cursor | copie [ide/cursor-mcp.json](ide/cursor-mcp.json) para `%USERPROFILE%\.cursor\mcp.json` |
+| Windsurf e outras | servidor stdio com comando `crlocal` e argumento `--mcp` |
+
+Ferramentas expostas: `code_review` (pasta, skills, idioma), `achados` e `listar_skills`.
+
+**2. Painel "Problemas" do VS Code (sem IA nenhuma).** Copie [ide/vscode/tasks.json](ide/vscode/tasks.json) para `.vscode/tasks.json` e rode *Terminal → Executar Tarefa → CodeReview Local*. Os achados aparecem sublinhados no código e no painel Problemas, com clique para ir à linha.
+
+**3. SARIF (Visual Studio, VS Code, GitHub).** `crlocal C:\projetos\MinhaApi --sarif cr.sarif` gera um arquivo que abre no [SARIF Viewer](https://marketplace.visualstudio.com/items?itemName=WDGIS.MicrosoftSarifViewer2022) do Visual Studio, na extensão [SARIF Viewer](https://marketplace.visualstudio.com/items?itemName=MS-SarifVSCode.sarif-viewer) do VS Code ou no GitHub Code Scanning.
 
 ## Como a nota é calculada
 
@@ -183,6 +205,8 @@ crlocal/
   gui.py            app desktop (CustomTkinter)
   updater.py        verificação e instalação de atualizações (GitHub Releases)
   __main__.py       linha de comando
+  mcp_server.py     servidor MCP para assistentes de IA nas IDEs
+  sarif.py          exportação SARIF e formato de "problemas" das IDEs
   runner.py         executa as skills em paralelo
   report.py         relatório Markdown e PDF (ReportLab)
   i18n.py           traduções pt / en / es
@@ -194,6 +218,7 @@ crlocal/
   rules/            padroes.yaml e regras Semgrep próprias
 build/              spec do PyInstaller e ponto de entrada do .exe
 installer/          script do instalador (Inno Setup)
+ide/                configurações prontas para VS Code e Cursor
 scripts/            download das ferramentas e regras
 docs/               captura de tela, relatório de exemplo e pesquisa
 exemplos/           projeto com problemas propositais para testar
@@ -225,7 +250,8 @@ Código sob licença [MIT](LICENSE). Ferramentas usadas: Gitleaks (MIT), Semgrep
 
 - **Updates:** the app checks the latest GitHub Release on startup and offers **Update now**, which downloads, installs silently and restarts. You can turn it off in the sidebar.
 - **Install:** download `CodeReviewLocal-Setup-<version>.exe` from [Releases](https://github.com/MateusKraiewski/CodeReview-App/releases/latest) and run it. You don't need Python or admin rights, because all tools are bundled. If SmartScreen warns, click *More info → Run anyway* (the installer is not signed yet). The .NET SDK is optional and only needed for the C# and DevSkim skills.
-- **CLI:** `CodeReviewLocal.exe <folder> --saida <out-dir> --lang en`, or `python -m crlocal ...` from source.
+- **CLI:** `crlocal <folder> --saida <out-dir> --lang en` (the installer adds `crlocal.exe` to your PATH), or `python -m crlocal ...` from source.
+- **IDE integration (no tokens spent on the review):** MCP server for Claude Code, Copilot, Cursor and Windsurf (`claude mcp add codereview-local -- crlocal --mcp`), VS Code Problems panel via [ide/vscode/tasks.json](ide/vscode/tasks.json), and SARIF export (`--sarif`). See [Integração com IDEs](#integração-com-ides).
 - Team rules: `crlocal/rules/padroes.yaml`.
 - Contributing: fork + Pull Request only; the maintainer reviews and merges. See [CONTRIBUTING.md](CONTRIBUTING.md). License: MIT.
 
@@ -235,6 +261,7 @@ Código sob licença [MIT](LICENSE). Ferramentas usadas: Gitleaks (MIT), Semgrep
 
 - **Actualizaciones:** al abrir, la aplicación consulta la última Release de GitHub y ofrece **Actualizar ahora**, que descarga, instala en silencio y reinicia. Se puede desactivar en el panel lateral.
 - **Instalación:** descargue `CodeReviewLocal-Setup-<versión>.exe` desde [Releases](https://github.com/MateusKraiewski/CodeReview-App/releases/latest) y ejecútelo. No necesita Python ni permisos de administrador, porque todas las herramientas vienen incluidas. Si SmartScreen avisa, haga clic en *Más información → Ejecutar de todas formas* (el instalador aún no está firmado). El .NET SDK es opcional y solo hace falta para las skills de C# y DevSkim.
-- **CLI:** `CodeReviewLocal.exe <carpeta> --saida <salida> --lang es`, o `python -m crlocal ...` desde el código.
+- **CLI:** `crlocal <carpeta> --saida <salida> --lang es` (el instalador agrega `crlocal.exe` al PATH), o `python -m crlocal ...` desde el código.
+- **Integración con IDEs (sin gastar tokens en la revisión):** servidor MCP para Claude Code, Copilot, Cursor y Windsurf (`claude mcp add codereview-local -- crlocal --mcp`), panel Problemas de VS Code con [ide/vscode/tasks.json](ide/vscode/tasks.json) y exportación SARIF (`--sarif`). Ver [Integração com IDEs](#integração-com-ides).
 - Reglas del equipo: `crlocal/rules/padroes.yaml`.
 - Contribuir: solo con fork + Pull Request; el mantenedor revisa y hace el merge. Ver [CONTRIBUTING.md](CONTRIBUTING.md). Licencia: MIT.

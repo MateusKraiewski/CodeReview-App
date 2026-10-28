@@ -1,0 +1,38 @@
+{
+  // Copie para .vscode/tasks.json do seu projeto. Rode com Ctrl+Shift+P → "Tasks: Run Task" → "CodeReview Local".
+  // Os achados aparecem no painel Problemas (Ctrl+Shift+M), com link para a linha. Zero tokens: nenhuma IA envolvida.
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "CodeReview Local: analisar projeto",
+      "type": "shell",
+      "command": "crlocal",
+      "args": ["${workspaceFolder}", "--problemas", "--sarif", "${workspaceFolder}/.codereview/codereview.sarif",
+               "--saida", "${workspaceFolder}/.codereview"],
+      "presentation": {"reveal": "silent", "clear": true},
+      "problemMatcher": {
+        "owner": "codereview-local",
+        "fileLocation": "absolute",
+        "pattern": {
+          "regexp": "^(.*):(\\d+):(\\d+): (error|warning|info): (.*)$",
+          "file": 1, "line": 2, "column": 3, "severity": 4, "message": 5
+        }
+      }
+    },
+    {
+      "label": "CodeReview Local: só segurança",
+      "type": "shell",
+      "command": "crlocal",
+      "args": ["${workspaceFolder}", "--problemas", "--skills", "segredos,seguranca-sast,seguranca-devskim,seguranca-python,dependencias"],
+      "presentation": {"reveal": "silent", "clear": true},
+      "problemMatcher": {
+        "owner": "codereview-local",
+        "fileLocation": "absolute",
+        "pattern": {
+          "regexp": "^(.*):(\\d+):(\\d+): (error|warning|info): (.*)$",
+          "file": 1, "line": 2, "column": 3, "severity": 4, "message": 5
+        }
+      }
+    }
+  ]
+}

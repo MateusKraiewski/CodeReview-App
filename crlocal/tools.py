@@ -45,12 +45,12 @@ def find_tool(name: str) -> list[str] | None:
 
 def ensure_std_streams() -> None:
     """No .exe sem console, stdout/stderr vêm como None: reabre os pipes herdados do processo pai."""
-    for fd, attr in ((1, "stdout"), (2, "stderr")):
+    for fd, attr, mode in ((0, "stdin", "r"), (1, "stdout", "w"), (2, "stderr", "w")):
         if getattr(sys, attr) is None:
             try:
-                setattr(sys, attr, open(fd, "w", encoding="utf-8", closefd=False))  # noqa: SIM115
+                setattr(sys, attr, open(fd, mode, encoding="utf-8", closefd=False))  # noqa: SIM115
             except OSError:
-                setattr(sys, attr, open(os.devnull, "w", encoding="utf-8"))  # noqa: SIM115
+                setattr(sys, attr, open(os.devnull, mode, encoding="utf-8"))  # noqa: SIM115
 
 
 def dispatch_tool(argv: list[str]) -> int | None:
@@ -76,6 +76,6 @@ def run(cmd: list[str], cwd: str | None = None, timeout: int = 300) -> subproces
     # CHILD_ENV avisa o .exe chamado como ferramenta para nunca abrir a interface gráfica
     env = dict(os.environ, PYTHONIOENCODING="utf-8", SEMGREP_SEND_METRICS="off", **{CHILD_ENV: "1"})
     return subprocess.run(
-        cmd, cwd=cwd, capture_output=True, text=True, encoding="utf-8",
+        cmd, cwd=cwd, capture_output=True, stdin=subprocess.DEVNULL, text=True, encoding="utf-8",
         errors="replace", timeout=timeout, env=env, creationflags=CREATE_NO_WINDOW,
     )

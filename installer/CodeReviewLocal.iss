@@ -25,6 +25,7 @@ WizardStyle=modern
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 UninstallDisplayIcon={app}\CodeReviewLocal.exe
+ChangesEnvironment=yes
 CloseApplications=yes
 RestartApplications=no
 LicenseFile=..\LICENSE
@@ -36,6 +37,10 @@ Name: "es"; MessagesFile: "compiler:Languages\Spanish.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
+
+[Registry]
+; coloca a pasta do app no PATH do usuário para o comando "crlocal" funcionar no terminal e nas IDEs
+Root: HKCU; Subkey: "Environment"; ValueType: expandsz; ValueName: "Path"; ValueData: "{olddata};{app}"; Check: NeedsAddPath(ExpandConstant('{app}'))
 
 [Files]
 Source: "..\dist\CodeReviewLocal\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -49,3 +54,16 @@ Name: "{autodesktop}\CodeReview Local"; Filename: "{app}\CodeReviewLocal.exe"; T
 Filename: "{app}\CodeReviewLocal.exe"; Description: "{cm:LaunchProgram,CodeReview Local}"; Flags: nowait postinstall skipifsilent
 ; atualização automática (instalador rodando em /SILENT): reabre o app ao terminar
 Filename: "{app}\CodeReviewLocal.exe"; Flags: nowait; Check: WizardSilent
+
+[Code]
+function NeedsAddPath(Dir: string): Boolean;
+var
+  Current: string;
+begin
+  if not RegQueryStringValue(HKEY_CURRENT_USER, 'Environment', 'Path', Current) then
+  begin
+    Result := True;
+    exit;
+  end;
+  Result := Pos(';' + Uppercase(Dir) + ';', ';' + Uppercase(Current) + ';') = 0;
+end;

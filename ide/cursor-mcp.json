@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "codereview-local": {
+      "command": "crlocal",
+      "args": ["--mcp"]
+    }
+  }
+}

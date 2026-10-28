@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 import pytest
@@ -111,3 +112,45 @@ def test_sem_internet_nao_quebra(monkeypatch):
 
     monkeypatch.setattr(urllib.request, "urlopen", falha)
     assert updater.check() is None
+
+
+def test_sarif_e_problemas():
+    from crlocal import sarif
+    from crlocal.runner import run_review
+    from crlocal.skills import all_skills
+
+    root = Path(__file__).resolve().parent.parent / "exemplos" / "projeto-ruim"
+    report = run_review(root, [s for s in all_skills() if s.id == "padroes"])
+    doc = sarif.to_sarif(report)
+    run = doc["runs"][0]
+    assert doc["version"] == "2.1.0"
+    assert len(run["results"]) == len(report.findings) > 0
+    rule_ids = {r["id"] for r in run["tool"]["driver"]["rules"]}
+    assert all(r["ruleId"] in rule_ids for r in run["results"])
+    lines = sarif.problem_lines(report)
+    pattern = re.compile(r"^(.*):(\d+):(\d+): (error|warning|info): (.*)$")
+    assert lines and all(pattern.match(line) for line in lines)
+
+
+def test_mcp_server():
+    from crlocal import mcp_server
+
+    init = mcp_server.handle({"jsonrpc": "2.0", "id": 1, "method": "initialize",
+                              "params": {"protocolVersion": "2025-03-26"}})
+    assert init["result"]["protocolVersion"] == "2025-03-26"
+    assert mcp_server.handle({"jsonrpc": "2.0", "method": "notifications/initialized"}) is None
+    names = {t["name"] for t in mcp_server.handle({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})["result"]["tools"]}
+    assert names == {"code_review", "achados", "listar_skills"}
+
+    root = str(Path(__file__).resolve().parent.parent / "exemplos" / "projeto-ruim")
+    call = mcp_server.handle({"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {
+        "name": "code_review", "arguments": {"pasta": root, "skills": ["padroes"], "salvar_relatorio": False}}})
+    assert not call["result"]["isError"]
+    assert "Nota:" in call["result"]["content"][0]["text"]
+
+    det = mcp_server.handle({"jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": {
+        "name": "achados", "arguments": {"pasta": root, "severidade_minima": "alta"}}})
+    assert "achado(s)" in det["result"]["content"][0]["text"]
+
+    bad = mcp_server.handle({"jsonrpc": "2.0", "id": 5, "method": "tools/call", "params": {"name": "xyz"}})
+    assert bad["error"]["code"] == -32602

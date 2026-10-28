@@ -24,4 +24,6 @@ a = Analysis([os.path.join(root, "build", "app_entry.py")], pathex=[root], datas
              hiddenimports=hidden, excludes=["matplotlib", "numpy", "pandas", "pytest"])
 pyz = PYZ(a.pure)
 exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name="CodeReviewLocal", console=False)
-coll = COLLECT(exe, a.binaries, a.datas, name="CodeReviewLocal")
+# crlocal.exe: mesma aplicação em modo console, para terminal, tarefas do VS Code e servidor MCP
+cli = EXE(pyz, a.scripts, [], exclude_binaries=True, name="crlocal", console=True)
+coll = COLLECT(exe, cli, a.binaries, a.datas, name="CodeReviewLocal")

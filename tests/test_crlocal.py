@@ -91,6 +91,8 @@ def test_comparacao_de_versoes():
     assert is_newer("1.0.0", "0.9.9")
     assert not is_newer("v0.1.0", "0.1.0")
     assert not is_newer("0.1.0", "0.2.0")
+    assert is_newer("v0.1.0", "0.1.0-dev.9")  # build de teste recebe a versão final
+    assert not is_newer("0.1.0-dev.9", "0.1.0")
 
 
 def test_le_release_do_github():

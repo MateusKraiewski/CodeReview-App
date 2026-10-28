@@ -10,7 +10,7 @@ Obrigado pelo interesse! 🎉 O projeto é aberto para uso e para sugestões, ma
 3. Faça as alterações e rode os testes:
    ```bat
    pip install -r requirements.txt pytest
-   pytest
+   python -m pytest
    python -m crlocal exemplos\projeto-ruim
    ```
 4. Abra um **Pull Request** do seu fork para a `main` deste repositório, preenchendo o template.

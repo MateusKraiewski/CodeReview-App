@@ -22,7 +22,8 @@ FROZEN = getattr(sys, "frozen", False)
 # Ferramentas Python embutidas no .exe: o app chama a si mesmo com --run-tool <nome>
 PY_TOOLS = {
     "bandit": ("bandit.cli.main", "main"),
-    "semgrep": ("semgrep.console_scripts.entrypoint", "main"),
+    # pysemgrep: o entrypoint padrão usa os.execvp, que no Windows perde a saída capturada
+    "semgrep": ("semgrep.main", "main"),
 }
 
 
@@ -42,6 +43,16 @@ def find_tool(name: str) -> list[str] | None:
     return [str(candidate)] if candidate.is_file() else None
 
 
+def ensure_std_streams() -> None:
+    """No .exe sem console, stdout/stderr vêm como None: reabre os pipes herdados do processo pai."""
+    for fd, attr in ((1, "stdout"), (2, "stderr")):
+        if getattr(sys, attr) is None:
+            try:
+                setattr(sys, attr, open(fd, "w", encoding="utf-8", closefd=False))  # noqa: SIM115
+            except OSError:
+                setattr(sys, attr, open(os.devnull, "w", encoding="utf-8"))  # noqa: SIM115
+
+
 def dispatch_tool(argv: list[str]) -> int | None:
     """Se o processo foi iniciado com --run-tool, executa a ferramenta e devolve o código de saída."""
     if len(argv) < 3 or argv[1] != "--run-tool" or argv[2] not in PY_TOOLS:
@@ -49,13 +60,7 @@ def dispatch_tool(argv: list[str]) -> int | None:
     import importlib
 
     module, func = PY_TOOLS[argv[2]]
-    # No .exe sem console, stdout/stderr vêm como None: reabre os pipes herdados do processo pai
-    for fd, attr in ((1, "stdout"), (2, "stderr")):
-        if getattr(sys, attr) is None:
-            try:
-                setattr(sys, attr, open(fd, "w", encoding="utf-8", closefd=False))  # noqa: SIM115
-            except OSError:
-                setattr(sys, attr, open(os.devnull, "w"))  # noqa: SIM115
+    ensure_std_streams()
     sys.argv = [argv[2], *argv[3:]]
     try:
         result = getattr(importlib.import_module(module), func)()

@@ -1,0 +1,97 @@
+name: Instalador Windows
+
+# PR: gera e testa o instalador (baixe em "Artifacts" na página da execução).
+# Tag v*: publica o instalador e o .zip portátil na página de Releases.
+on:
+  pull_request:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Versão
+        id: versao
+        shell: pwsh
+        run: |
+          $v = if ("${{ github.ref_type }}" -eq "tag") { "${{ github.ref_name }}".TrimStart("v") } else { "0.1.0-dev.${{ github.run_number }}" }
+          "valor=$v" >> $env:GITHUB_OUTPUT
+
+      - name: Dependências Python
+        run: pip install lizard bandit ruff PyYAML reportlab pyinstaller
+
+      - name: Semgrep (opcional no Windows)
+        continue-on-error: true
+        run: pip install semgrep
+
+      - name: Baixar ferramentas (Gitleaks, OSV-Scanner, Ruff, DevSkim)
+        shell: pwsh
+        run: ./scripts/baixar_ferramentas.ps1
+
+      - name: Baixar regras do Semgrep
+        continue-on-error: true
+        run: python scripts/baixar_regras.py
+
+      - name: Gerar o app com PyInstaller
+        run: pyinstaller build/CodeReviewLocal.spec --noconfirm --distpath dist --workpath build/tmp
+
+      - name: Testar o .exe gerado
+        shell: pwsh
+        run: |
+          $exe = "dist/CodeReviewLocal/CodeReviewLocal.exe"
+          $p = Start-Process $exe -ArgumentList "exemplos/projeto-ruim","--saida","teste-exe","--resumo","resumo.json","--json","achados.json" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "O .exe terminou com código $($p.ExitCode)" }
+          $resumo = Get-Content resumo.json -Raw | ConvertFrom-Json
+          $resumo.PSObject.Properties | ForEach-Object { "{0,-20} {1,-8} {2,4}  {3}" -f $_.Name, $_.Value.status, $_.Value.achados, $_.Value.mensagem }
+          # devem rodar sem erro no .exe; as da segunda lista também devem encontrar os problemas do exemplo
+          foreach ($s in "segredos","dependencias","seguranca-python","qualidade-python","complexidade","padroes","testes") {
+            if ($resumo.$s.status -eq "error") { throw "Skill '$s' deu erro no .exe: $($resumo.$s.mensagem)" }
+          }
+          foreach ($s in "segredos","seguranca-python","qualidade-python","complexidade","padroes","testes") {
+            if ($resumo.$s.status -ne "ok") { throw "Skill '$s' não rodou no .exe: $($resumo.$s.status) $($resumo.$s.mensagem)" }
+          }
+          foreach ($s in "seguranca-python","qualidade-python","complexidade","padroes","testes") {
+            if ($resumo.$s.achados -lt 1) { throw "Skill '$s' não encontrou nada no projeto de exemplo" }
+          }
+          if (-not (Get-ChildItem teste-exe -Filter *.pdf)) { throw "PDF não gerado" }
+          if (-not (Get-ChildItem teste-exe -Filter *.md)) { throw "Markdown não gerado" }
+
+      - name: Gerar o instalador (Inno Setup)
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress; }
+          & $iscc "/DAppVersion=${{ steps.versao.outputs.valor }}" installer/CodeReviewLocal.iss
+          if ($LASTEXITCODE -ne 0) { throw "Falha no Inno Setup" }
+          Compress-Archive -Path dist/CodeReviewLocal -DestinationPath "dist/CodeReviewLocal-${{ steps.versao.outputs.valor }}-portatil.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CodeReviewLocal-Setup-${{ steps.versao.outputs.valor }}
+          path: |
+            dist/CodeReviewLocal-Setup-*.exe
+            dist/CodeReviewLocal-*-portatil.zip
+            teste-exe/
+
+      - name: Publicar Release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          name: CodeReview Local ${{ github.ref_name }}
+          generate_release_notes: true
+          files: |
+            dist/CodeReviewLocal-Setup-*.exe
+            dist/CodeReviewLocal-*-portatil.zip

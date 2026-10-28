@@ -21,6 +21,7 @@ def main(argv=None) -> int:
     ap.add_argument("--skills", help="ids separados por vírgula (padrão: todas)")
     ap.add_argument("--json", help="salvar achados em JSON")
     ap.add_argument("--saida", help="pasta onde salvar o relatório .md e .pdf")
+    ap.add_argument("--resumo", help="salvar a situação de cada skill em JSON (usado no CI)")
     ap.add_argument("--listar", action="store_true", help="listar skills e sair")
     args = ap.parse_args(argv)
 
@@ -44,6 +45,10 @@ def main(argv=None) -> int:
     if args.json:
         with open(args.json, "w", encoding="utf-8") as fh:
             json.dump([f.to_dict() for f in report.findings], fh, ensure_ascii=False, indent=2)
+    if args.resumo:
+        with open(args.resumo, "w", encoding="utf-8") as fh:
+            json.dump({r.skill: {"status": r.status, "achados": len(r.findings), "mensagem": r.message}
+                       for r in report.results}, fh, ensure_ascii=False, indent=2)
     if args.saida:
         for path in report_mod.save(report, args.saida):
             print(t("cli.report", path=path))

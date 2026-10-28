@@ -4,6 +4,7 @@ import json
 import time
 from pathlib import Path
 
+from .. import control
 from ..detect import iter_source_files, rel
 from ..i18n import t
 from ..models import Finding, Severity, SkillResult
@@ -34,8 +35,15 @@ class Skill:
     def analyze(self, root: Path, languages: dict[str, int]) -> list[Finding]:
         raise NotImplementedError
 
-    def source_files(self, root: Path) -> list[Path]:
-        return list(self.targets) if self.targets is not None else list(iter_source_files(root))
+    def source_files(self, root: Path):
+        """Arquivos a analisar. Cada arquivo passa pelo controle (pausa, pular, concluir)."""
+        return self.checked(self.targets if self.targets is not None else iter_source_files(root))
+
+    @staticmethod
+    def checked(items):
+        for item in items:
+            control.checkpoint()
+            yield item
 
     def cli_targets(self, root: Path) -> list[str]:
         """Argumentos de alvo para ferramentas externas: os arquivos alterados, ou a pasta inteira."""
@@ -45,16 +53,29 @@ class Skill:
 
     def execute(self, root: Path, languages: dict[str, int], targets: list[Path] | None = None) -> SkillResult:
         self.targets = targets
+        control.set_current_skill(self.id)
+        ctl = control.active()
         start = time.perf_counter()
         result = SkillResult(self.id, self.title, "ok")
         try:
+            control.checkpoint()  # espera a pausa / respeita "pular" antes de começar
             if not self.applies_to(languages):
                 raise SkillSkipped(t("skip.no_lang"))
             result.findings = self.analyze(root, languages)
+            control.checkpoint()
+        except control.Cancelled:
+            result.status, result.findings = "skipped", []
+            result.message = t("skip.finished") if ctl and ctl.finished else t("skip.user")
         except SkillSkipped as e:
             result.status, result.message = "skipped", str(e)
         except Exception as e:  # uma skill com erro não derruba as outras
-            result.status, result.message = "error", f"{type(e).__name__}: {e}"
+            if ctl and ctl.cancelled(self.id):  # processo encerrado pelo usuário no meio da leitura
+                result.status, result.findings = "skipped", []
+                result.message = t("skip.finished") if ctl.finished else t("skip.user")
+            else:
+                result.status, result.message = "error", f"{type(e).__name__}: {e}"
+        finally:
+            control.set_current_skill(None)
         result.duration_s = round(time.perf_counter() - start, 2)
         return result
 

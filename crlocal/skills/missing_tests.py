@@ -30,7 +30,7 @@ class MissingTestsSkill(Skill):
 
     def analyze(self, root, languages):
         tests, sources = [], []
-        for p in iter_source_files(root):
+        for p in self.checked(iter_source_files(root)):
             r = rel(p, root)
             (tests if TEST_FILE.search(p.name) or TEST_DIR.search(r.rsplit("/", 1)[0] if "/" in r else "") else sources).append(p)
         if not sources:

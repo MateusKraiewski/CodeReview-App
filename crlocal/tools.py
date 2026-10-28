@@ -7,6 +7,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from . import control
+
 IS_WINDOWS = os.name == "nt"
 CREATE_NO_WINDOW = 0x08000000 if IS_WINDOWS else 0
 
@@ -78,7 +80,29 @@ CHILD_ENV = "CRLOCAL_CHILD"
 def run(cmd: list[str], cwd: str | None = None, timeout: int = 300) -> subprocess.CompletedProcess:
     # CHILD_ENV avisa o .exe chamado como ferramenta para nunca abrir a interface gráfica
     env = dict(os.environ, PYTHONIOENCODING="utf-8", PYTHONUTF8="1", SEMGREP_SEND_METRICS="off", **{CHILD_ENV: "1"})
-    return subprocess.run(
-        cmd, cwd=cwd, capture_output=True, stdin=subprocess.DEVNULL, text=True, encoding="utf-8",
-        errors="replace", timeout=timeout, env=env, creationflags=CREATE_NO_WINDOW,
+    proc = subprocess.Popen(
+        cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.DEVNULL, text=True,
+        encoding="utf-8", errors="replace", env=env, creationflags=CREATE_NO_WINDOW,
     )
+    ctl, skill = control.active(), control.current_skill()
+    if ctl:
+        ctl.register(skill, proc)
+    try:
+        waited = 0.0
+        while True:
+            try:
+                out, err = proc.communicate(timeout=1)
+                break
+            except subprocess.TimeoutExpired:
+                if not (ctl and ctl.paused):  # o tempo pausado não conta para o limite
+                    waited += 1
+                if waited >= timeout:
+                    proc.kill()
+                    proc.communicate()
+                    raise subprocess.TimeoutExpired(cmd, timeout) from None
+    finally:
+        if ctl:
+            ctl.unregister(skill, proc)
+    if ctl:
+        ctl.checkpoint(skill)  # pulada/concluída enquanto rodava: o processo foi encerrado, descarta a saída
+    return subprocess.CompletedProcess(cmd, proc.returncode, out, err)

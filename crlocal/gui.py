@@ -18,6 +18,7 @@ from . import __version__
 from . import report as report_mod
 from . import updater
 from .changes import MODES, ChangesError, resolve_scope
+from .control import RunControl
 from .i18n import LANGUAGES, get_language, set_language, t
 from .models import Finding, Report, Severity, SkillResult
 from .runner import run_review
@@ -107,6 +108,9 @@ class App(ctk.CTk):
         self.skill_state: dict[str, SkillResult | str] = {}  # "wait" | "run" | resultado
         self.live: list[Finding] = []
         self.run_started = 0.0
+        self.ctl: RunControl | None = None
+        self.paused_at: float | None = None
+        self.paused_total = 0.0
         self.container: ctk.CTkFrame | None = None
 
         self.update_info: updater.Update | None = None
@@ -161,6 +165,7 @@ class App(ctk.CTk):
         elif self.running:
             self._show_live()
             self.btn_run.configure(state="disabled")
+        self._show_run_controls()
 
     def _build_sidebar(self, parent) -> ctk.CTkFrame:
         side = ctk.CTkFrame(parent, width=360, corner_radius=0, fg_color=SURFACE, border_width=0)
@@ -372,6 +377,14 @@ class App(ctk.CTk):
         self.status.pack(side="left")
         self.pct_lbl = ctk.CTkLabel(head, text="", font=self._font(13, "bold"), text_color=ACCENT)
         self.pct_lbl.pack(side="right")
+        # controles da análise em andamento (só aparecem enquanto ela roda)
+        self.btn_finish = ctk.CTkButton(head, text="⏹  " + t("ui.finish"), height=28, width=130, font=self._font(12),
+                                        fg_color=SURFACE_2, text_color=TEXT, hover_color=BORDER, border_width=1,
+                                        border_color=BORDER, command=self.finish_now)
+        self.btn_pause = ctk.CTkButton(head, text="", height=28, width=120, font=self._font(12),
+                                       fg_color=SURFACE_2, text_color=TEXT, hover_color=BORDER, border_width=1,
+                                       border_color=BORDER, command=self.toggle_pause)
+        self.skip_hint = ctk.CTkLabel(head, text=t("ui.skip_hint"), font=self._font(11), text_color=MUTED)
         self.progress = ctk.CTkProgressBar(bottom, height=12, corner_radius=6, progress_color=ACCENT,
                                            fg_color=SURFACE_2)
         self.progress.set(0)
@@ -439,22 +452,25 @@ class App(ctk.CTk):
             b.configure(state="disabled")
         self.report, self.saved, self.live = None, [], []
         self.running, self.run_started = True, time.monotonic()
+        self.ctl, self.paused_at, self.paused_total = RunControl(), None, 0.0
         self.run_skills = chosen
         self.skill_state = {s.id: "wait" for s in chosen}
         self.score_lbl.configure(text="…")
         self.grade_lbl.configure(text="", fg_color="transparent")
         self._render_chips()
         self._show_live()
+        self._show_run_controls()
         self.after(250, self._tick)
         formats = [f for f, v in (("md", self.fmt_md), ("pdf", self.fmt_pdf)) if v.get()]
-        threading.Thread(target=self._worker, args=(project, chosen, formats, self.out_dir.get(), self.scope_mode),
+        threading.Thread(target=self._worker, args=(project, chosen, formats, self.out_dir.get(), self.scope_mode,
+                                                    self.ctl),
                          daemon=True).start()
         self.after(100, self._poll)
 
-    def _worker(self, project, skills, formats, out_dir, mode) -> None:
+    def _worker(self, project, skills, formats, out_dir, mode, ctl) -> None:
         try:
             scope = resolve_scope(project, mode)
-            rep = run_review(project, skills, scope=scope,
+            rep = run_review(project, skills, scope=scope, control=ctl,
                              progress=lambda title, r: self.events.put(("progress", title, r)))
             try:
                 saved, save_error = (report_mod.save(rep, out_dir, formats) if formats else []), None
@@ -501,7 +517,62 @@ class App(ctk.CTk):
 
     def _stop_run(self) -> None:
         self.running = False
+        if self.ctl and self.ctl.paused:
+            self.ctl.resume()
+        self.ctl = None
         self.btn_run.configure(state="normal")
+        self._show_run_controls()
+
+    # ---------- pausar / concluir / pular ----------
+    def _show_run_controls(self) -> None:
+        for w in (self.btn_pause, self.btn_finish, self.skip_hint):
+            w.pack_forget()
+        if not (self.running and self.ctl):
+            return
+        self.btn_finish.pack(side="right", padx=(8, 12))
+        self.btn_pause.pack(side="right")
+        self.skip_hint.pack(side="left", padx=(12, 0))
+        paused = self.ctl.paused
+        self.btn_pause.configure(text=("▶  " + t("ui.resume")) if paused else ("⏸  " + t("ui.pause")),
+                                 state="disabled" if self.ctl.finished else "normal")
+        self.btn_finish.configure(state="disabled" if self.ctl.finished else "normal")
+
+    def _elapsed(self) -> int:
+        paused = self.paused_total + (time.monotonic() - self.paused_at if self.paused_at else 0)
+        return int(time.monotonic() - self.run_started - paused)
+
+    def toggle_pause(self) -> None:
+        if not (self.running and self.ctl):
+            return
+        if self.ctl.paused:
+            self.ctl.resume()
+            self.paused_total += time.monotonic() - (self.paused_at or time.monotonic())
+            self.paused_at = None
+        else:
+            self.ctl.pause()
+            self.paused_at = time.monotonic()
+        self._show_run_controls()
+        self._update_counter()
+
+    def finish_now(self) -> None:
+        if not (self.running and self.ctl):
+            return
+        if self.paused_at:
+            self.paused_total += time.monotonic() - self.paused_at
+            self.paused_at = None
+        self.ctl.finish()
+        for sid, state in self.skill_state.items():
+            if state in ("wait", "run"):
+                self.skill_state[sid] = "skipping"
+                self._update_chip(sid)
+        self._show_run_controls()
+        self._update_counter()
+
+    def _skip_skill(self, sid: str) -> None:
+        if self.running and self.ctl and self.skill_state.get(sid) in ("wait", "run"):
+            self.ctl.skip(sid)
+            self.skill_state[sid] = "skipping"
+            self._update_chip(sid)
 
     # ---------- andamento ----------
     def _chip_look(self, sid: str):
@@ -509,7 +580,11 @@ class App(ctk.CTk):
         if state == "wait":
             return "○", MUTED, SURFACE_2
         if state == "run":
+            if self.ctl and self.ctl.paused:
+                return "⏸", ACCENT, ("#e0e7ff", "#2e3350")
             return "◐◓◑◒"[int(time.monotonic() * 4) % 4], ACCENT, ("#e0e7ff", "#2e3350")
+        if state == "skipping":
+            return "⏭", MUTED, SURFACE_2
         if state.status == "ok":
             return f"✓ {len(state.findings)}", OK_COLOR, SURFACE_2
         if state.status == "skipped":
@@ -523,6 +598,7 @@ class App(ctk.CTk):
         for i, skill in enumerate(self.run_skills):
             lbl = ctk.CTkLabel(self.chips, text="", font=self._font(11), corner_radius=8, height=22, anchor="w")
             lbl.grid(row=i // CHIP_COLS, column=i % CHIP_COLS, sticky="ew", padx=3, pady=2)
+            lbl.bind("<Button-1>", lambda _e, sid=skill.id: self._skip_skill(sid))
             self._chip_lbls[skill.id] = lbl
             self._update_chip(skill.id)
         self._update_counter()
@@ -535,7 +611,8 @@ class App(ctk.CTk):
         icon, color, bg = self._chip_look(sid)
         state = self.skill_state.get(sid)
         title = skill.title if len(skill.title) <= 27 else skill.title[:26] + "…"
-        lbl.configure(text=f"  {icon}  {title}", text_color=color, fg_color=bg)
+        clickable = self.running and state in ("wait", "run")
+        lbl.configure(text=f"  {icon}  {title}", text_color=color, fg_color=bg, cursor="hand2" if clickable else "")
         if isinstance(state, SkillResult) and state.status != "ok" and sid not in self._chip_tips:
             self._chip_tips.add(sid)
             _Tooltip(lbl, state.message)
@@ -549,8 +626,13 @@ class App(ctk.CTk):
         self.progress.set(done / total)
         self.pct_lbl.configure(text=f"{round(100 * done / total)}%")
         if self.running:
-            elapsed = int(time.monotonic() - self.run_started)
-            self.status.configure(text=t("ui.progress", done=done, total=total, s=elapsed, n=len(self.live)))
+            if self.ctl and self.ctl.finished:
+                text = t("ui.finishing")
+            elif self.ctl and self.ctl.paused:
+                text = t("ui.paused", done=done, total=total, n=len(self.live))
+            else:
+                text = t("ui.progress", done=done, total=total, s=self._elapsed(), n=len(self.live))
+            self.status.configure(text=text)
 
     def _tick(self) -> None:
         if not self.running:

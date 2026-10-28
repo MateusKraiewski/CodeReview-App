@@ -7,6 +7,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable, Iterable
 
+from . import control as control_mod
 from .changes import ChangesError, Scope
 from .dedupe import merge_duplicates
 from .detect import EXTENSIONS, detect_languages
@@ -18,7 +19,8 @@ ProgressFn = Callable[[str, SkillResult | None], None]
 
 
 def run_review(project: str | Path, skills: Iterable[Skill] | None = None,
-               progress: ProgressFn | None = None, workers: int = 4, scope: Scope | None = None) -> Report:
+               progress: ProgressFn | None = None, workers: int = 4, scope: Scope | None = None,
+               control: control_mod.RunControl | None = None) -> Report:
     """Roda as skills. Com um `scope` ativo, só os arquivos alterados entram no resultado."""
     root = Path(project).resolve()
     if not root.is_dir():
@@ -44,8 +46,12 @@ def run_review(project: str | Path, skills: Iterable[Skill] | None = None,
             progress(skill.title, result)
         return result
 
-    with ThreadPoolExecutor(max_workers=workers) as pool:
-        results = list(pool.map(job, skills))
+    control_mod.activate(control)  # pular / pausar / concluir pela tela
+    try:
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            results = list(pool.map(job, skills))
+    finally:
+        control_mod.activate(None)
     _dedupe_across_skills(results)
     for r in results:
         r.findings.sort(key=lambda f: (-f.severity, f.file, f.line))

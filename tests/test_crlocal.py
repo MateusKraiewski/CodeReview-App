@@ -188,3 +188,46 @@ def test_revisar_so_alteracoes(tmp_path):
     branch = resolve_scope(tmp_path, "branch")
     assert branch.base == "main" and branch.files == {"a.py"}
     assert {f.file for f in run_review(tmp_path, skills).findings} == {"a.py", "b.py"}
+
+
+def test_pular_pausar_concluir(tmp_path):
+    import sys
+    import threading
+    import time
+
+    from crlocal.control import RunControl
+    from crlocal.skills.base import Skill
+    from crlocal.tools import run
+
+    class Lenta(Skill):
+        category = "Padrões"
+
+        def __init__(self, sid):
+            self.id = sid
+
+        @property
+        def title(self):
+            return self.id
+
+        def analyze(self, root, languages):
+            run([sys.executable, "-c", "import time; time.sleep(30)"])
+            return [self.finding(rule_id="x", message="x", severity=Severity.BAIXA, file="a.py")]
+
+    (tmp_path / "a.py").write_text("x = 1\n", encoding="utf-8")
+    ctl = RunControl()
+    t0 = time.monotonic()
+    threading.Timer(0.5, ctl.skip, args=("lenta-1",)).start()
+    threading.Timer(1.0, ctl.finish).start()
+    rep = run_review(tmp_path, [Lenta("lenta-1"), Lenta("lenta-2")], control=ctl, workers=2)
+    assert time.monotonic() - t0 < 15  # sem o controle levaria 30s
+    status = {r.skill: (r.status, r.message) for r in rep.results}
+    assert status["lenta-1"] == ("skipped", i18n.t("skip.user"))
+    assert status["lenta-2"] == ("skipped", i18n.t("skip.finished"))
+    assert not rep.findings
+
+    ctl = RunControl()
+    ctl.pause()
+    threading.Timer(1.5, ctl.resume).start()
+    t0 = time.monotonic()
+    rep = run_review(tmp_path, [PatternsSkill()], control=ctl)
+    assert time.monotonic() - t0 >= 1.4 and rep.results[0].status == "ok"

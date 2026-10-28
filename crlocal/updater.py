@@ -36,8 +36,13 @@ def parse_version(text: str) -> tuple[int, ...]:
     return tuple(int(n) for n in nums[:3]) or (0,)
 
 
+def _sort_key(text: str) -> tuple[tuple[int, ...], int]:
+    # uma versão final vem depois das builds de teste dela (0.1.0 > 0.1.0-dev.9)
+    return parse_version(text), 0 if "-" in (text or "") else 1
+
+
 def is_newer(remote: str, local: str = __version__) -> bool:
-    return parse_version(remote) > parse_version(local)
+    return _sort_key(remote) > _sort_key(local)
 
 
 def parse_release(data: dict) -> Update:

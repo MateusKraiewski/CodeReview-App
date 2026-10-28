@@ -22,6 +22,7 @@ from .i18n import LANGUAGES, get_language, set_language, t
 from .models import Finding, Report, Severity, SkillResult
 from .runner import run_review
 from .skills import all_skills
+from .tools import app_dir
 
 CONFIG_DIR = Path(os.environ.get("APPDATA") or Path.home() / ".config") / "CodeReviewLocal"
 CONFIG_FILE = CONFIG_DIR / "config.json"
@@ -47,6 +48,7 @@ ERR_COLOR = ("#b91c1c", "#f87171")
 CHIP_COLS = 4
 GRADE_COLORS = {"A": "#16a34a", "B": "#65a30d", "C": "#d97706", "D": "#ea580c", "E": "#dc2626"}
 FONT = "Segoe UI"
+ASSETS = app_dir() / "assets"
 
 
 def load_config() -> dict:
@@ -82,6 +84,7 @@ class App(ctk.CTk):
         super().__init__(fg_color=BG)
         set_language(self.cfg.get("lang", "pt"))
         self.title(f"CodeReview Local {__version__}")
+        self._set_window_icon()
         self.geometry("1280x800")
         self.minsize(1040, 640)
 
@@ -115,6 +118,28 @@ class App(ctk.CTk):
         if self.check_updates.get():
             self.after(1500, self._check_updates)
 
+    def _set_window_icon(self) -> None:
+        try:
+            if sys.platform == "win32" and (ASSETS / "icone.ico").is_file():
+                self.iconbitmap(default=str(ASSETS / "icone.ico"))
+            elif (ASSETS / "icone.png").is_file():
+                self._icon_photo = tk.PhotoImage(file=str(ASSETS / "icone.png"))
+                self.iconphoto(True, self._icon_photo)
+        except tk.TclError:  # ícone é enfeite: nunca impede a tela de abrir
+            pass
+
+    def _logo_image(self):
+        try:
+            from PIL import Image
+
+            return ctk.CTkImage(Image.open(ASSETS / "icone-64.png"), size=(28, 28))
+        except Exception:  # sem Pillow/ImageTk: usa a versão em 32 px direto no Tk
+            try:
+                self._logo_photo = tk.PhotoImage(file=str(ASSETS / "icone-32.png"))
+                return self._logo_photo
+            except tk.TclError:
+                return None
+
     # ---------- layout ----------
     def _font(self, size=13, weight="normal") -> ctk.CTkFont:
         return ctk.CTkFont(family=FONT, size=size, weight=weight)
@@ -145,7 +170,9 @@ class App(ctk.CTk):
 
         head = ctk.CTkFrame(side, fg_color="transparent")
         head.grid(row=0, column=0, sticky="ew", padx=20, pady=(22, 4))
-        ctk.CTkLabel(head, text="◆  CodeReview Local", font=self._font(19, "bold"), text_color=TEXT).pack(anchor="w")
+        logo = self._logo_image()
+        ctk.CTkLabel(head, text="  CodeReview Local", image=logo, compound="left", font=self._font(19, "bold"),
+                     text_color=TEXT).pack(anchor="w")
         ctk.CTkLabel(head, text=t("ui.subtitle"), font=self._font(12), text_color=MUTED,
                      wraplength=310, justify="left").pack(anchor="w", pady=(4, 0))
 

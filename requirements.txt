@@ -5,3 +5,4 @@ semgrep>=1.80
 PyYAML>=6.0
 reportlab>=4.0
 customtkinter>=5.2
+Pillow>=10.0

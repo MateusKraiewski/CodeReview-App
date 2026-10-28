@@ -1,3 +1,5 @@
+<img src="assets/icone.png" alt="" width="88" align="right">
+
 # CodeReview Local
 
 [![Download](https://img.shields.io/github/v/release/MateusKraiewski/CodeReview-App?label=download&color=blue)](https://github.com/MateusKraiewski/CodeReview-App/releases/latest) [![CI](https://github.com/MateusKraiewski/CodeReview-App/actions/workflows/ci.yml/badge.svg)](https://github.com/MateusKraiewski/CodeReview-App/actions/workflows/ci.yml) [![Instalador](https://github.com/MateusKraiewski/CodeReview-App/actions/workflows/release.yml/badge.svg)](https://github.com/MateusKraiewski/CodeReview-App/actions/workflows/release.yml) [![Licença: MIT](https://img.shields.io/badge/licen%C3%A7a-MIT-green.svg)](LICENSE) ![Windows](https://img.shields.io/badge/Windows-10%2F11-blue) ![Offline](https://img.shields.io/badge/100%25-offline-brightgreen)

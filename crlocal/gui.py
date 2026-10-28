@@ -758,8 +758,11 @@ class App(ctk.CTk):
     def _run_installer(self, setup: Path) -> None:
         self.status.configure(text=t("upd.installing"))
         self._persist()
+        if self.running:
+            self.ctl.finish()  # encerra ferramentas de uma análise em andamento, que travariam os arquivos
         updater.run_installer(setup)
-        self.after(800, self.destroy)
+        # fecha de vez (sem esperar threads) para o instalador conseguir trocar os arquivos
+        self.after(300, lambda: (self.destroy(), os._exit(0)))
 
     @staticmethod
     def _open_url(url: str) -> None:

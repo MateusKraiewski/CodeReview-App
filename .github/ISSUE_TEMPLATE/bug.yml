@@ -1,0 +1,25 @@
+name: 🐛 Bug
+description: Algo não funciona como deveria
+labels: [bug]
+body:
+  - type: textarea
+    id: oque
+    attributes:
+      label: O que aconteceu?
+      description: Inclua a mensagem de erro ou um print.
+    validations: {required: true}
+  - type: textarea
+    id: passos
+    attributes:
+      label: Como reproduzir
+      placeholder: "1. Abri o app\n2. Escolhi a pasta...\n3. ..."
+    validations: {required: true}
+  - type: input
+    id: versao
+    attributes:
+      label: Versão do Windows / Python / .NET
+  - type: dropdown
+    id: skill
+    attributes:
+      label: Skill envolvida
+      options: [Nenhuma / geral, Gitleaks, Semgrep, DevSkim, Bandit, OSV-Scanner, Roslyn (C#), Ruff, Lizard, Testes, Padrões do time, Relatório PDF/MD, Interface]

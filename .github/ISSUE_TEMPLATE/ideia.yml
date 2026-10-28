@@ -1,0 +1,13 @@
+name: 💡 Ideia ou nova skill
+description: Sugira uma melhoria, regra ou ferramenta
+labels: [enhancement]
+body:
+  - type: textarea
+    id: ideia
+    attributes:
+      label: Qual a ideia?
+    validations: {required: true}
+  - type: textarea
+    id: porque
+    attributes:
+      label: Por que seria útil?

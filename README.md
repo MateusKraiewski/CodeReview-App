@@ -1,5 +1,7 @@
 # CodeReview Local
 
+[![CI](https://github.com/MateusKraiewski/CodeReview-App/actions/workflows/ci.yml/badge.svg)](https://github.com/MateusKraiewski/CodeReview-App/actions/workflows/ci.yml) [![Licença: MIT](https://img.shields.io/badge/licen%C3%A7a-MIT-green.svg)](LICENSE) ![Windows](https://img.shields.io/badge/Windows-10%2F11-blue) ![Python](https://img.shields.io/badge/python-3.11%2B-blue) ![Offline](https://img.shields.io/badge/100%25-offline-brightgreen)
+
 **Code review 100% offline, sem IA e sem tokens.** Você escolhe a pasta de um projeto, a ferramenta roda várias "skills" de análise (ferramentas open source consagradas + regras próprias) e gera um relatório em **PDF** e **Markdown** com nota, prioridades e sugestões de correção.
 
 > 🇺🇸 [English](#english) · 🇪🇸 [Español](#español)
@@ -141,6 +143,8 @@ build/              spec do PyInstaller e ponto de entrada do .exe
 scripts/            download das ferramentas e regras
 docs/               captura de tela, relatório de exemplo e pesquisa
 exemplos/           projeto com problemas propositais para testar
+tests/              testes automatizados (pytest)
+.github/            CI, templates de issue/PR e CODEOWNERS
 ```
 
 ## Limitações conhecidas
@@ -150,9 +154,13 @@ exemplos/           projeto com problemas propositais para testar
 - O suporte do Semgrep no Windows ainda é beta. Se ele falhar, o DevSkim continua cobrindo segurança.
 - A base do OSV-Scanner é baixada na primeira execução. Depois disso funciona offline.
 
+## Contribuindo
+
+O projeto é aberto: qualquer pessoa pode baixar, usar e sugerir melhorias. Ninguém faz push direto na `main`. Toda mudança chega por **Pull Request a partir de um fork**, passa pelo CI e precisa da aprovação do mantenedor. Veja o [CONTRIBUTING.md](CONTRIBUTING.md). Vulnerabilidades: [SECURITY.md](SECURITY.md).
+
 ## Licenças
 
-O código deste repositório é seu. Ferramentas usadas: Gitleaks (MIT), Semgrep CE (LGPL-2.1, regras sob Semgrep Rules License: uso interno permitido), DevSkim (MIT), Bandit (Apache-2.0), OSV-Scanner (Apache-2.0), Ruff (MIT), Lizard (MIT), ReportLab (BSD).
+Código sob licença [MIT](LICENSE). Ferramentas usadas: Gitleaks (MIT), Semgrep CE (LGPL-2.1, regras sob Semgrep Rules License: uso interno permitido), DevSkim (MIT), Bandit (Apache-2.0), OSV-Scanner (Apache-2.0), Ruff (MIT), Lizard (MIT), ReportLab (BSD).
 
 ---
 
@@ -164,6 +172,7 @@ O código deste repositório é seu. Ferramentas usadas: Gitleaks (MIT), Semgrep
 - Run without building: `pip install -r requirements.txt` then `pythonw CodeReviewLocal.pyw`.
 - CLI: `python -m crlocal <folder> --saida <out-dir> --lang en`.
 - Team rules: `crlocal/rules/padroes.yaml`.
+- Contributing: fork + Pull Request only; the maintainer reviews and merges. See [CONTRIBUTING.md](CONTRIBUTING.md). License: MIT.
 
 ## Español
 
@@ -173,3 +182,4 @@ O código deste repositório é seu. Ferramentas usadas: Gitleaks (MIT), Semgrep
 - Ejecutar sin compilar: `pip install -r requirements.txt` y `pythonw CodeReviewLocal.pyw`.
 - CLI: `python -m crlocal <carpeta> --saida <salida> --lang es`.
 - Reglas del equipo: `crlocal/rules/padroes.yaml`.
+- Contribuir: solo con fork + Pull Request; el mantenedor revisa y hace el merge. Ver [CONTRIBUTING.md](CONTRIBUTING.md). Licencia: MIT.

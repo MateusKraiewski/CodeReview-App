@@ -7,6 +7,7 @@ import queue
 import subprocess
 import sys
 import threading
+import time
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
@@ -18,7 +19,7 @@ from . import report as report_mod
 from . import updater
 from .changes import MODES, ChangesError, resolve_scope
 from .i18n import LANGUAGES, get_language, set_language, t
-from .models import Finding, Report, Severity
+from .models import Finding, Report, Severity, SkillResult
 from .runner import run_review
 from .skills import all_skills
 
@@ -41,6 +42,9 @@ MUTED = ("#6b7280", "#9aa1b2")
 SEV_COLORS = {Severity.CRITICA: ("#991b1b", "#f87171"), Severity.ALTA: ("#dc2626", "#fb7185"),
               Severity.MEDIA: ("#d97706", "#fbbf24"), Severity.BAIXA: ("#2563eb", "#60a5fa"),
               Severity.INFO: ("#6b7280", "#9ca3af")}
+OK_COLOR = ("#15803d", "#4ade80")
+ERR_COLOR = ("#b91c1c", "#f87171")
+CHIP_COLS = 4
 GRADE_COLORS = {"A": "#16a34a", "B": "#65a30d", "C": "#d97706", "D": "#ea580c", "E": "#dc2626"}
 FONT = "Segoe UI"
 
@@ -94,6 +98,12 @@ class App(ctk.CTk):
         self.report: Report | None = None
         self.saved: list[Path] = []
         self._rows: dict[str, Finding] = {}
+        # análise em andamento: sobrevive a trocas de idioma, que redesenham a tela
+        self.running = False
+        self.run_skills: list = []
+        self.skill_state: dict[str, SkillResult | str] = {}  # "wait" | "run" | resultado
+        self.live: list[Finding] = []
+        self.run_started = 0.0
         self.container: ctk.CTkFrame | None = None
 
         self.update_info: updater.Update | None = None
@@ -119,8 +129,13 @@ class App(ctk.CTk):
         self._build_sidebar(self.container).grid(row=0, column=0, sticky="nsw")
         self._build_main(self.container).grid(row=0, column=1, sticky="nsew", padx=20, pady=20)
         self._style_tree()
+        if self.run_skills:
+            self._render_chips()
         if self.report:
             self._show_summary()
+        elif self.running:
+            self._show_live()
+            self.btn_run.configure(state="disabled")
 
     def _build_sidebar(self, parent) -> ctk.CTkFrame:
         side = ctk.CTkFrame(parent, width=360, corner_radius=0, fg_color=SURFACE, border_width=0)
@@ -320,15 +335,26 @@ class App(ctk.CTk):
         self.detail.grid(row=2, column=0, sticky="ew", padx=16, pady=12)
         self._set_detail(t("ui.select_finding"))
 
-        bottom = ctk.CTkFrame(main, fg_color="transparent")
+        # andamento: barra, contador e uma etiqueta por skill
+        bottom = ctk.CTkFrame(main, fg_color=SURFACE, corner_radius=14, border_width=1, border_color=BORDER)
         bottom.grid(row=4, column=0, sticky="ew", pady=(12, 0))
         bottom.grid_columnconfigure(0, weight=1)
-        self.progress = ctk.CTkProgressBar(bottom, height=8, progress_color=ACCENT, fg_color=SURFACE_2)
+        head = ctk.CTkFrame(bottom, fg_color="transparent")
+        head.grid(row=0, column=0, sticky="ew", padx=16, pady=(10, 4))
+        self.status = ctk.CTkLabel(head, text=t("ui.ready"), font=self._font(13, "bold"), text_color=TEXT, anchor="w")
+        self.status.pack(side="left")
+        self.pct_lbl = ctk.CTkLabel(head, text="", font=self._font(13, "bold"), text_color=ACCENT)
+        self.pct_lbl.pack(side="right")
+        self.progress = ctk.CTkProgressBar(bottom, height=12, corner_radius=6, progress_color=ACCENT,
+                                           fg_color=SURFACE_2)
         self.progress.set(0)
-        self.progress.grid(row=0, column=0, sticky="ew")
-        self.status = ctk.CTkLabel(bottom, text=t("ui.ready"), font=self._font(12), text_color=MUTED, width=360,
-                                   anchor="e")
-        self.status.grid(row=0, column=1, padx=(12, 0))
+        self.progress.grid(row=1, column=0, sticky="ew", padx=16, pady=(0, 10))
+        self.chips = ctk.CTkFrame(bottom, fg_color="transparent")
+        self.chips.grid(row=2, column=0, sticky="ew", padx=12, pady=(0, 8))
+        for c in range(CHIP_COLS):
+            self.chips.grid_columnconfigure(c, weight=1, uniform="chip")
+        self._chip_lbls: dict[str, ctk.CTkLabel] = {}
+        self._chip_tips: set[str] = set()
         return main
 
     def _action(self, parent, text, command, accent=False) -> ctk.CTkButton:
@@ -384,10 +410,15 @@ class App(ctk.CTk):
         self.btn_run.configure(state="disabled")
         for b in (self.btn_pdf, self.btn_md, self.btn_dir):
             b.configure(state="disabled")
-        self._total, self._done = len(chosen), 0
-        self.progress.set(0)
-        self.status.configure(text=t("ui.analyzing"))
-        self.tree.delete(*self.tree.get_children())
+        self.report, self.saved, self.live = None, [], []
+        self.running, self.run_started = True, time.monotonic()
+        self.run_skills = chosen
+        self.skill_state = {s.id: "wait" for s in chosen}
+        self.score_lbl.configure(text="…")
+        self.grade_lbl.configure(text="", fg_color="transparent")
+        self._render_chips()
+        self._show_live()
+        self.after(250, self._tick)
         formats = [f for f, v in (("md", self.fmt_md), ("pdf", self.fmt_pdf)) if v.get()]
         threading.Thread(target=self._worker, args=(project, chosen, formats, self.out_dir.get(), self.scope_mode),
                          daemon=True).start()
@@ -398,8 +429,11 @@ class App(ctk.CTk):
             scope = resolve_scope(project, mode)
             rep = run_review(project, skills, scope=scope,
                              progress=lambda title, r: self.events.put(("progress", title, r)))
-            saved = report_mod.save(rep, out_dir, formats) if formats else []
-            self.events.put(("done", rep, saved))
+            try:
+                saved, save_error = (report_mod.save(rep, out_dir, formats) if formats else []), None
+            except Exception as e:  # falha no relatório não pode jogar fora a análise
+                saved, save_error = [], e
+            self.events.put(("done", rep, (saved, save_error)))
         except ChangesError as e:
             self.events.put(("info", e, None))
         except Exception as e:  # mostra qualquer falha na tela em vez de travar
@@ -410,33 +444,103 @@ class App(ctk.CTk):
             while True:
                 kind, a, b = self.events.get_nowait()
                 if kind == "progress":
-                    if b is None:
-                        self.status.configure(text=t("ui.running", name=a))
-                    else:
-                        self._done += 1
-                        self.progress.set(self._done / max(self._total, 1))
+                    skill = next((s for s in self.run_skills if s.title == a), None)
+                    if skill:
+                        self.skill_state[skill.id] = b if b is not None else "run"
+                        self._update_chip(skill.id)
+                    if b is not None:  # achados aparecem na lista assim que cada skill termina
+                        self.live.extend(b.findings)
+                        self._show_live()
                 elif kind == "done":
-                    self._finish(a, b)
+                    self._finish(a, *b)
                     return
-                elif kind == "info":
-                    self.btn_run.configure(state="normal")
-                    self.status.configure(text=str(a))
-                    messagebox.showinfo("CodeReview Local", str(a))
-                    return
-                elif kind == "error":
-                    self.btn_run.configure(state="normal")
-                    self.status.configure(text=t("ui.error"))
-                    messagebox.showerror("CodeReview Local", str(a))
+                elif kind in ("info", "error"):
+                    self._stop_run()
+                    self.status.configure(text=str(a) if kind == "info" else t("ui.error"))
+                    (messagebox.showinfo if kind == "info" else messagebox.showerror)("CodeReview Local", str(a))
                     return
         except queue.Empty:
             pass
         self.after(100, self._poll)
 
-    def _finish(self, rep: Report, saved: list[Path]) -> None:
+    def _finish(self, rep: Report, saved: list[Path], save_error: Exception | None = None) -> None:
         self.report, self.saved = rep, saved
+        self._stop_run()
         self.progress.set(1)
-        self.btn_run.configure(state="normal")
+        self.pct_lbl.configure(text="100%")
         self._show_summary()
+        if save_error:
+            messagebox.showwarning("CodeReview Local", t("ui.save_failed", e=save_error))
+
+    def _stop_run(self) -> None:
+        self.running = False
+        self.btn_run.configure(state="normal")
+
+    # ---------- andamento ----------
+    def _chip_look(self, sid: str):
+        state = self.skill_state.get(sid, "wait")
+        if state == "wait":
+            return "○", MUTED, SURFACE_2
+        if state == "run":
+            return "◐◓◑◒"[int(time.monotonic() * 4) % 4], ACCENT, ("#e0e7ff", "#2e3350")
+        if state.status == "ok":
+            return f"✓ {len(state.findings)}", OK_COLOR, SURFACE_2
+        if state.status == "skipped":
+            return "–", MUTED, SURFACE_2
+        return "✗", ERR_COLOR, SURFACE_2
+
+    def _render_chips(self) -> None:
+        for w in self.chips.winfo_children():
+            w.destroy()
+        self._chip_lbls, self._chip_tips = {}, set()
+        for i, skill in enumerate(self.run_skills):
+            lbl = ctk.CTkLabel(self.chips, text="", font=self._font(11), corner_radius=8, height=22, anchor="w")
+            lbl.grid(row=i // CHIP_COLS, column=i % CHIP_COLS, sticky="ew", padx=3, pady=2)
+            self._chip_lbls[skill.id] = lbl
+            self._update_chip(skill.id)
+        self._update_counter()
+
+    def _update_chip(self, sid: str) -> None:
+        lbl = self._chip_lbls.get(sid)
+        if not lbl:
+            return
+        skill = next(s for s in self.run_skills if s.id == sid)
+        icon, color, bg = self._chip_look(sid)
+        state = self.skill_state.get(sid)
+        title = skill.title if len(skill.title) <= 27 else skill.title[:26] + "…"
+        lbl.configure(text=f"  {icon}  {title}", text_color=color, fg_color=bg)
+        if isinstance(state, SkillResult) and state.status != "ok" and sid not in self._chip_tips:
+            self._chip_tips.add(sid)
+            _Tooltip(lbl, state.message)
+        self._update_counter()
+
+    def _update_counter(self) -> None:
+        total = len(self.run_skills)
+        done = sum(isinstance(v, SkillResult) for v in self.skill_state.values())
+        if not total:
+            return
+        self.progress.set(done / total)
+        self.pct_lbl.configure(text=f"{round(100 * done / total)}%")
+        if self.running:
+            elapsed = int(time.monotonic() - self.run_started)
+            self.status.configure(text=t("ui.progress", done=done, total=total, s=elapsed, n=len(self.live)))
+
+    def _tick(self) -> None:
+        if not self.running:
+            return
+        for sid, state in self.skill_state.items():
+            if state == "run":
+                self._update_chip(sid)
+        self._update_counter()
+        self.after(250, self._tick)
+
+    def _show_live(self) -> None:
+        counts = {s: 0 for s in Severity}
+        for f in self.live:
+            counts[f.severity] += 1
+        for sev, lbl in self.count_lbls.items():
+            lbl.configure(text=str(counts[sev]))
+        self._fill_tree()
 
     def _show_summary(self) -> None:
         rep, saved = self.report, self.saved
@@ -465,9 +569,10 @@ class App(ctk.CTk):
     def _fill_tree(self) -> None:
         self.tree.delete(*self.tree.get_children())
         self._rows = {}
-        if not self.report:
+        source = self.report.findings if self.report else self.live
+        if not source and not self.running and not self.report:
             return
-        rows = [f for f in sorted(self.report.findings, key=lambda x: (-x.severity, x.file, x.line))
+        rows = [f for f in sorted(source, key=lambda x: (-x.severity, x.file, x.line))
                 if self.sev_filter is None or f.severity == self.sev_filter]
         for i, f in enumerate(rows):
             loc = f"{f.file}:{f.line}" if f.file and f.line else (f.file or t("r.project_level"))
@@ -478,7 +583,8 @@ class App(ctk.CTk):
         if rows:
             self.empty_lbl.place_forget()
         else:
-            self.empty_lbl.configure(text=t("r.no_findings") if self.report else t("ui.empty"))
+            self.empty_lbl.configure(text=t("r.no_findings") if self.report else
+                                     t("ui.analyzing") if self.running else t("ui.empty"))
             self.empty_lbl.place(relx=0.5, rely=0.45, anchor="center")
 
     def _show_detail(self, _e=None) -> None:
@@ -565,7 +671,7 @@ class App(ctk.CTk):
         self.cfg["theme"] = mode
         ctk.set_appearance_mode(mode)
         self._persist()
-        self.after(50, self._build)  # recolore a lista (ttk) para o novo tema
+        self.after(50, self._style_tree)  # só a lista (ttk) precisa ser recolorida; a análise continua
 
     def _change_scope(self, label: str) -> None:
         self.scope_mode = self._scope_labels[label]

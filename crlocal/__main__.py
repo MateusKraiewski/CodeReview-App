@@ -7,6 +7,7 @@ import sys
 
 from . import report as report_mod
 from . import sarif
+from .changes import ChangesError, resolve_scope
 from .i18n import LANGUAGES, set_language, t
 from .runner import run_review
 from .skills import all_skills
@@ -24,6 +25,10 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="crlocal", description=t("cli.desc"), parents=[pre])
     ap.add_argument("pasta", nargs="?")
     ap.add_argument("--skills", help="ids separados por vírgula (padrão: todas)")
+    ap.add_argument("--alteracoes", nargs="?", const="local", choices=["local", "branch"],
+                    help="revisar só o que mudou: 'local' (padrão) = alterações não commitadas; "
+                         "'branch' = tudo o que mudou na branch em relação à base")
+    ap.add_argument("--base", help="branch base para --alteracoes branch (padrão: main/master)")
     ap.add_argument("--json", help="salvar achados em JSON")
     ap.add_argument("--saida", help="pasta onde salvar o relatório .md e .pdf")
     ap.add_argument("--sarif", help="salvar os achados em SARIF 2.1.0 (VS Code, Visual Studio, GitHub)")
@@ -45,10 +50,19 @@ def main(argv=None) -> int:
         wanted = set(args.skills.split(","))
         skills = [s for s in skills if s.id in wanted]
 
-    report = run_review(args.pasta, skills, progress=lambda title, r: print(
-        f"  {'✔' if r and r.status == 'ok' else '•' if r is None else '–'} {title}"
-        + (f": {t('cli.found', n=len(r.findings))}" if r and r.status == "ok" else f": {r.message}" if r else ""),
-        file=sys.stderr))
+    def progress(title, r):
+        status = "✔" if r and r.status == "ok" else "•" if r is None else "–"
+        detail = f": {t('cli.found', n=len(r.findings))}" if r and r.status == "ok" else f": {r.message}" if r else ""
+        print(f"  {status} {title}{detail}", file=sys.stderr)
+
+    try:
+        scope = resolve_scope(args.pasta, args.alteracoes or ("branch" if args.base else "tudo"), args.base)
+        if scope.active:
+            print(scope.describe(), file=sys.stderr)
+        report = run_review(args.pasta, skills, progress=progress, scope=scope)
+    except ChangesError as e:
+        print(e, file=sys.stderr)
+        return 0 if str(e) == t("chg.none") else 2
     print(f"\n{t('r.languages')}: {report.languages}")
     print(f"{t('r.score')}: {report.score()}/100  |  " + "  ".join(f"{s.label}: {n}" for s, n in sorted(report.counts().items(), reverse=True)))
     if args.json:

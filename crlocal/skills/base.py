@@ -4,7 +4,7 @@ import json
 import time
 from pathlib import Path
 
-from ..detect import rel
+from ..detect import iter_source_files, rel
 from ..i18n import t
 from ..models import Finding, Severity, SkillResult
 
@@ -17,6 +17,8 @@ class Skill:
     id: str = ""
     category: str = ""
     languages: set[str] | None = None  # None = qualquer linguagem
+    targets: list[Path] | None = None  # arquivos a analisar no modo "só alterações" (None = projeto inteiro)
+    MAX_TARGETS = 150  # acima disso a ferramenta analisa a pasta toda (limite de linha de comando do Windows)
 
     @property
     def title(self) -> str:
@@ -32,7 +34,17 @@ class Skill:
     def analyze(self, root: Path, languages: dict[str, int]) -> list[Finding]:
         raise NotImplementedError
 
-    def execute(self, root: Path, languages: dict[str, int]) -> SkillResult:
+    def source_files(self, root: Path) -> list[Path]:
+        return list(self.targets) if self.targets is not None else list(iter_source_files(root))
+
+    def cli_targets(self, root: Path) -> list[str]:
+        """Argumentos de alvo para ferramentas externas: os arquivos alterados, ou a pasta inteira."""
+        if self.targets is not None and len(self.targets) <= self.MAX_TARGETS:
+            return [str(p) for p in self.targets]
+        return [str(root)]
+
+    def execute(self, root: Path, languages: dict[str, int], targets: list[Path] | None = None) -> SkillResult:
+        self.targets = targets
         start = time.perf_counter()
         result = SkillResult(self.id, self.title, "ok")
         try:

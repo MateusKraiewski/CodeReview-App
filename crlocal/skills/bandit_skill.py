@@ -18,7 +18,8 @@ class BanditSkill(Skill):
         exe = find_tool("bandit")
         if not exe:
             raise SkillSkipped(t("skip.tool_missing", tool="bandit"))
-        proc = run([*exe, "-r", str(root), "-f", "json", "-q",
+        targets = [p for p in self.cli_targets(root) if p.endswith(".py")] if self.targets is not None else []
+        proc = run([*exe, "-r", *(targets or [str(root)]), "-f", "json", "-q",
                     "-x", ",".join(f"*/{d}/*" for d in (".venv", "venv", "node_modules", ".git"))])
         data = json.loads(proc.stdout or "{}")
         return [

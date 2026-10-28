@@ -26,7 +26,7 @@ class RuffSkill(Skill):
         exe = find_tool("ruff")
         if not exe:
             raise SkillSkipped(t("skip.tool_missing", tool="ruff"))
-        proc = run([*exe, "check", str(root), "--output-format", "json", "--exit-zero",
+        proc = run([*exe, "check", *self.cli_targets(root), "--output-format", "json", "--exit-zero",
                     "--no-cache", "--isolated", "--select", SELECT, "--ignore", IGNORE])
         data = json.loads(proc.stdout or "[]")
         findings = []

@@ -64,6 +64,7 @@ class Report:
     results: list[SkillResult]
     started_at: str
     duration_s: float
+    scope: str = ""  # descrição do escopo quando o CR não foi do projeto inteiro
 
     @property
     def findings(self) -> list[Finding]:

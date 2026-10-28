@@ -16,6 +16,7 @@ import customtkinter as ctk
 from . import __version__
 from . import report as report_mod
 from . import updater
+from .changes import MODES, ChangesError, resolve_scope
 from .i18n import LANGUAGES, get_language, set_language, t
 from .models import Finding, Report, Severity
 from .runner import run_review
@@ -87,6 +88,7 @@ class App(ctk.CTk):
         self.fmt_pdf = tk.BooleanVar(value=self.cfg.get("pdf", True))
         self.project = tk.StringVar(value=(self.cfg.get("recent") or [""])[0])
         self.out_dir = tk.StringVar(value=self.cfg.get("out_dir", str(DEFAULT_OUT)))
+        self.scope_mode = self.cfg.get("scope", "tudo") if self.cfg.get("scope") in MODES else "tudo"
         self.sev_filter: Severity | None = None
         self.events: queue.Queue = queue.Queue()
         self.report: Report | None = None
@@ -222,7 +224,19 @@ class App(ctk.CTk):
         search.grid(row=1, column=0, sticky="ew")
         search.grid_columnconfigure(0, weight=1)
         ctk.CTkLabel(search, text=t("ui.folder"), font=self._font(12, "bold"), text_color=MUTED).grid(
-            row=0, column=0, columnspan=3, sticky="w", padx=16, pady=(12, 2))
+            row=0, column=0, sticky="w", padx=16, pady=(12, 2))
+        # escopo: projeto inteiro, só as alterações não commitadas ou a branch comparada com a main
+        scope_bar = ctk.CTkFrame(search, fg_color="transparent")
+        scope_bar.grid(row=0, column=0, sticky="e", padx=(16, 8), pady=(10, 4))
+        scope_lbl = ctk.CTkLabel(scope_bar, text=t("ui.scope") + " ⓘ", font=self._font(12), text_color=MUTED)
+        scope_lbl.grid(row=0, column=0, padx=(0, 8))
+        _Tooltip(scope_lbl, t("ui.scope.tip"))  # CTkSegmentedButton não aceita bind
+        self._scope_labels = {t(f"scope.opt.{m}"): m for m in MODES}
+        scope = ctk.CTkSegmentedButton(scope_bar, values=list(self._scope_labels), font=self._font(11),
+                                       selected_color=ACCENT, selected_hover_color=ACCENT_HOVER,
+                                       command=self._change_scope)
+        scope.set(t(f"scope.opt.{self.scope_mode}"))
+        scope.grid(row=0, column=1)
         self.combo = ctk.CTkComboBox(search, variable=self.project, values=self.cfg.get("recent", []) or [""],
                                      height=40, font=self._font(13), fg_color=SURFACE_2, border_color=BORDER,
                                      button_color=BORDER, text_color=TEXT, dropdown_font=self._font(12))
@@ -375,15 +389,19 @@ class App(ctk.CTk):
         self.status.configure(text=t("ui.analyzing"))
         self.tree.delete(*self.tree.get_children())
         formats = [f for f, v in (("md", self.fmt_md), ("pdf", self.fmt_pdf)) if v.get()]
-        threading.Thread(target=self._worker, args=(project, chosen, formats, self.out_dir.get()),
+        threading.Thread(target=self._worker, args=(project, chosen, formats, self.out_dir.get(), self.scope_mode),
                          daemon=True).start()
         self.after(100, self._poll)
 
-    def _worker(self, project, skills, formats, out_dir) -> None:
+    def _worker(self, project, skills, formats, out_dir, mode) -> None:
         try:
-            rep = run_review(project, skills, progress=lambda title, r: self.events.put(("progress", title, r)))
+            scope = resolve_scope(project, mode)
+            rep = run_review(project, skills, scope=scope,
+                             progress=lambda title, r: self.events.put(("progress", title, r)))
             saved = report_mod.save(rep, out_dir, formats) if formats else []
             self.events.put(("done", rep, saved))
+        except ChangesError as e:
+            self.events.put(("info", e, None))
         except Exception as e:  # mostra qualquer falha na tela em vez de travar
             self.events.put(("error", e, None))
 
@@ -399,6 +417,11 @@ class App(ctk.CTk):
                         self.progress.set(self._done / max(self._total, 1))
                 elif kind == "done":
                     self._finish(a, b)
+                    return
+                elif kind == "info":
+                    self.btn_run.configure(state="normal")
+                    self.status.configure(text=str(a))
+                    messagebox.showinfo("CodeReview Local", str(a))
                     return
                 elif kind == "error":
                     self.btn_run.configure(state="normal")
@@ -426,7 +449,8 @@ class App(ctk.CTk):
             lbl.configure(text=str(counts[sev]))
         self._fill_tree()
         skipped = [r.title for r in rep.results if r.status != "ok"]
-        self.status.configure(text=t("ui.done", s=rep.duration_s) + (f" · {t('ui.skipped', n=len(skipped))}" if skipped else ""))
+        self.status.configure(text=t("ui.done", s=rep.duration_s) + (f" · {t('ui.skipped', n=len(skipped))}" if skipped else "")
+                              + (f" · {rep.scope}" if rep.scope else ""))
         self.btn_dir.configure(state="normal" if saved else "disabled")
         self.btn_pdf.configure(state="normal" if any(p.suffix == ".pdf" for p in saved) else "disabled")
         self.btn_md.configure(state="normal" if any(p.suffix == ".md" for p in saved) else "disabled")
@@ -512,8 +536,8 @@ class App(ctk.CTk):
                     0, lambda: self.status.configure(text=t("upd.downloading", p=int(f * 100)))))
                 self.after(0, lambda: self._run_installer(setup))
             except OSError as e:
-                self.after(0, lambda: (self.btn_update.configure(state="normal"),
-                                       messagebox.showerror("CodeReview Local", t("upd.failed", e=e))))
+                self.after(0, lambda err=e: (self.btn_update.configure(state="normal"),
+                                             messagebox.showerror("CodeReview Local", t("upd.failed", e=err))))
         threading.Thread(target=worker, daemon=True).start()
 
     def _run_installer(self, setup: Path) -> None:
@@ -543,6 +567,10 @@ class App(ctk.CTk):
         self._persist()
         self.after(50, self._build)  # recolore a lista (ttk) para o novo tema
 
+    def _change_scope(self, label: str) -> None:
+        self.scope_mode = self._scope_labels[label]
+        self._persist()
+
     def _remember(self, project: str) -> None:
         recent = [project] + [p for p in self.cfg.get("recent", []) if p != project]
         self.cfg["recent"] = recent[:MAX_RECENT]
@@ -551,7 +579,8 @@ class App(ctk.CTk):
 
     def _persist(self) -> None:
         self.cfg.update(lang=get_language(), check_updates=self.check_updates.get(), skills=[k for k, v in self.skill_vars.items() if v.get()],
-                        md=self.fmt_md.get(), pdf=self.fmt_pdf.get(), out_dir=self.out_dir.get())
+                        md=self.fmt_md.get(), pdf=self.fmt_pdf.get(), out_dir=self.out_dir.get(),
+                        scope=self.scope_mode)
         save_config(self.cfg)
 
     def _on_close(self) -> None:

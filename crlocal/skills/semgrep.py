@@ -28,7 +28,7 @@ class SemgrepSkill(Skill):
         cmd = [*exe, "scan", "--json", "--quiet", "--metrics=off", "--disable-version-check", "--timeout", "30"]
         for p in self.rules_paths():
             cmd += ["--config", p]
-        proc = run(cmd + [str(root)], cwd=str(root))
+        proc = run(cmd + self.cli_targets(root), cwd=str(root))
         if not proc.stdout.strip():
             raise RuntimeError(proc.stderr.strip()[-400:] or t("err.no_output", tool="semgrep"))
         data = json.loads(proc.stdout)

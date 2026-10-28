@@ -16,6 +16,7 @@ from pathlib import Path
 from . import __version__
 from . import report as report_mod
 from . import sarif
+from .changes import resolve_scope
 from .i18n import LANGUAGES, set_language
 from .models import Report, Severity
 from .runner import run_review
@@ -44,6 +45,11 @@ TOOLS = [
                 "skills": {"type": "array", "items": {"type": "string"},
                            "description": "Ids das skills (veja 'listar_skills'). Padrão: todas."},
                 "idioma": {"type": "string", "enum": list(LANGUAGES), "description": "Idioma do resultado."},
+                "escopo": {"type": "string", "enum": ["tudo", "local", "branch"],
+                           "description": ("tudo = projeto inteiro (padrão); local = só alterações não commitadas; "
+                                           "branch = só o que mudou na branch em relação à base. Use local/branch "
+                                           "para revisar de novo depois de corrigir.")},
+                "base": {"type": "string", "description": "Branch base do escopo 'branch' (padrão: main/master)."},
                 "salvar_relatorio": {"type": "boolean",
                                      "description": "Gerar PDF e Markdown em <pasta>/.codereview (padrão: true)."},
             },
@@ -89,8 +95,9 @@ def tool_code_review(args: dict) -> str:
     root = Path(args["pasta"]).expanduser()
     wanted = set(args.get("skills") or [])
     skills = [s for s in all_skills() if not wanted or s.id in wanted]
+    scope = resolve_scope(root, args.get("escopo") or "tudo", args.get("base"))
     with contextlib.redirect_stdout(sys.stderr):  # nada pode sujar o canal do protocolo
-        report = run_review(root, skills)
+        report = run_review(root, skills, scope=scope)
         saved = (report_mod.save(report, root / ".codereview")
                  if args.get("salvar_relatorio", True) else [])
         if saved:
@@ -103,6 +110,8 @@ def tool_code_review(args: dict) -> str:
         "Severidades: " + ", ".join(f"{s.label} {counts[s]}" for s in sorted(Severity, reverse=True)),
         "Linguagens: " + (", ".join(f"{k} ({v})" for k, v in report.languages.items()) or "-"),
     ]
+    if report.scope:
+        lines.append("Escopo: " + report.scope)
     off = [f"{r.skill} ({r.status}: {r.message})" for r in report.results if r.status != "ok"]
     if off:
         lines.append("Skills não executadas: " + "; ".join(off))
@@ -147,7 +156,8 @@ def handle(msg: dict) -> dict | None:
                   "capabilities": {"tools": {"listChanged": False}},
                   "serverInfo": {"name": "codereview-local", "version": __version__},
                   "instructions": ("Code review local e offline. Chame code_review com o caminho absoluto do "
-                                   "projeto; use achados para detalhar sem rodar de novo.")}
+                                   "projeto; use achados para detalhar sem rodar de novo. Depois de corrigir, "
+                                   "rode code_review com escopo 'local' ou 'branch' para revisar só o que mudou.")}
     elif method == "ping":
         result = {}
     elif method == "tools/list":

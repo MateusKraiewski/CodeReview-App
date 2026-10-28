@@ -98,12 +98,37 @@ python -m crlocal --listar
 | `--saida PASTA` | salva o relatório `.md` e `.pdf` |
 | `--lang pt\|en\|es` | idioma das mensagens e do relatório |
 | `--skills a,b,c` | roda só as skills indicadas (ids da tabela de skills) |
+| `--alteracoes [local\|branch]` | revisa só o que mudou (veja abaixo) |
+| `--base BRANCH` | branch base do modo `branch` (padrão: `main`/`master`) |
 | `--json ARQ` | exporta os achados em JSON |
 | `--resumo ARQ` | exporta a situação de cada skill (executada, pulada ou erro) em JSON |
 | `--listar` | lista as skills disponíveis |
 | `--sarif ARQ` | exporta em SARIF 2.1.0 (Visual Studio, VS Code, GitHub Code Scanning) |
 | `--problemas` | imprime `arquivo:linha:coluna: nível: mensagem`, formato que as IDEs entendem |
 | `--mcp` | inicia o servidor MCP para assistentes de IA (veja abaixo) |
+
+### Revisar só o que mudou
+
+Fez o CR, corrigiu os achados e quer conferir de novo? Não precisa revisar o projeto inteiro. Escolha o escopo no campo **Revisar** da tela ou use `--alteracoes`:
+
+| Escopo | O que entra | Quando usar |
+|---|---|---|
+| Projeto inteiro | todos os arquivos | primeira revisão |
+| Alterações não commitadas (`--alteracoes`) | arquivos modificados, adicionados e novos que ainda não foram commitados | conferir as correções antes do commit |
+| Branch vs main (`--alteracoes branch`) | tudo o que mudou desde que a branch saiu da `main`, commitado ou não | revisar a branch antes de abrir o PR/MR |
+
+```bat
+crlocal C:\projetos\MinhaApi --alteracoes
+crlocal C:\projetos\MinhaApi --alteracoes branch --base develop
+```
+
+Como funciona:
+
+- O app usa o Git da máquina para listar os arquivos alterados, então a pasta precisa ser um repositório Git.
+- Os achados aparecem para o arquivo alterado inteiro, não só para as linhas que mudaram.
+- As skills de linguagens que não foram tocadas são puladas. Por exemplo, se só arquivos `.py` mudaram, a skill de C# nem compila o projeto.
+- Ruff, Bandit, Semgrep, Lizard e as regras do time analisam só os arquivos alterados, o que deixa a revisão bem mais rápida. As ferramentas que precisam do projeto todo (Gitleaks, OSV-Scanner, Roslyn e duplicação) rodam normalmente e o resultado é filtrado.
+- O relatório mostra o escopo usado, e a nota considera só os arquivos revisados.
 
 ## Integração com IDEs
 
@@ -118,7 +143,7 @@ A análise roda inteira na sua máquina. Nenhuma das opções abaixo gasta token
 | Cursor | copie [ide/cursor-mcp.json](ide/cursor-mcp.json) para `%USERPROFILE%\.cursor\mcp.json` |
 | Windsurf e outras | servidor stdio com comando `crlocal` e argumento `--mcp` |
 
-Ferramentas expostas: `code_review` (pasta, skills, idioma), `achados` e `listar_skills`.
+Ferramentas expostas: `code_review` (pasta, skills, idioma e escopo `tudo`/`local`/`branch`), `achados` e `listar_skills`. Depois de corrigir, peça para a IA "revisar só as alterações" e ela usa o escopo `local` ou `branch`.
 
 **2. Painel "Problemas" do VS Code (sem IA nenhuma).** Copie [ide/vscode/tasks.json](ide/vscode/tasks.json) para `.vscode/tasks.json` e rode *Terminal → Executar Tarefa → CodeReview Local*. Os achados aparecem sublinhados no código e no painel Problemas, com clique para ir à linha.
 
@@ -208,6 +233,7 @@ crlocal/
   mcp_server.py     servidor MCP para assistentes de IA nas IDEs
   sarif.py          exportação SARIF e formato de "problemas" das IDEs
   runner.py         executa as skills em paralelo
+  changes.py        escopo "só o que mudou" (arquivos alterados via Git)
   report.py         relatório Markdown e PDF (ReportLab)
   i18n.py           traduções pt / en / es
   dedupe.py         une achados repetidos entre ferramentas
@@ -251,6 +277,7 @@ Código sob licença [MIT](LICENSE). Ferramentas usadas: Gitleaks (MIT), Semgrep
 - **Updates:** the app checks the latest GitHub Release on startup and offers **Update now**, which downloads, installs silently and restarts. You can turn it off in the sidebar.
 - **Install:** download `CodeReviewLocal-Setup-<version>.exe` from [Releases](https://github.com/MateusKraiewski/CodeReview-App/releases/latest) and run it. You don't need Python or admin rights, because all tools are bundled. If SmartScreen warns, click *More info → Run anyway* (the installer is not signed yet). The .NET SDK is optional and only needed for the C# and DevSkim skills.
 - **CLI:** `crlocal <folder> --saida <out-dir> --lang en` (the installer adds `crlocal.exe` to your PATH), or `python -m crlocal ...` from source.
+- **Review only what changed:** after fixing, use the **Review** selector (or `--alteracoes` / `--alteracoes branch --base main`) to check only uncommitted changes or the whole branch compared to main. It needs Git.
 - **IDE integration (no tokens spent on the review):** MCP server for Claude Code, Copilot, Cursor and Windsurf (`claude mcp add codereview-local -- crlocal --mcp`), VS Code Problems panel via [ide/vscode/tasks.json](ide/vscode/tasks.json), and SARIF export (`--sarif`). See [Integração com IDEs](#integração-com-ides).
 - Team rules: `crlocal/rules/padroes.yaml`.
 - Contributing: fork + Pull Request only; the maintainer reviews and merges. See [CONTRIBUTING.md](CONTRIBUTING.md). License: MIT.
@@ -262,6 +289,7 @@ Código sob licença [MIT](LICENSE). Ferramentas usadas: Gitleaks (MIT), Semgrep
 - **Actualizaciones:** al abrir, la aplicación consulta la última Release de GitHub y ofrece **Actualizar ahora**, que descarga, instala en silencio y reinicia. Se puede desactivar en el panel lateral.
 - **Instalación:** descargue `CodeReviewLocal-Setup-<versión>.exe` desde [Releases](https://github.com/MateusKraiewski/CodeReview-App/releases/latest) y ejecútelo. No necesita Python ni permisos de administrador, porque todas las herramientas vienen incluidas. Si SmartScreen avisa, haga clic en *Más información → Ejecutar de todas formas* (el instalador aún no está firmado). El .NET SDK es opcional y solo hace falta para las skills de C# y DevSkim.
 - **CLI:** `crlocal <carpeta> --saida <salida> --lang es` (el instalador agrega `crlocal.exe` al PATH), o `python -m crlocal ...` desde el código.
+- **Revisar solo lo que cambió:** después de corregir, use el selector **Revisar** (o `--alteracoes` / `--alteracoes branch --base main`) para revisar solo los cambios sin commit o toda la rama respecto a main. Requiere Git.
 - **Integración con IDEs (sin gastar tokens en la revisión):** servidor MCP para Claude Code, Copilot, Cursor y Windsurf (`claude mcp add codereview-local -- crlocal --mcp`), panel Problemas de VS Code con [ide/vscode/tasks.json](ide/vscode/tasks.json) y exportación SARIF (`--sarif`). Ver [Integração com IDEs](#integração-com-ides).
 - Reglas del equipo: `crlocal/rules/padroes.yaml`.
 - Contribuir: solo con fork + Pull Request; el mantenedor revisa y hace el merge. Ver [CONTRIBUTING.md](CONTRIBUTING.md). Licencia: MIT.

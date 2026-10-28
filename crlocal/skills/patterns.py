@@ -5,7 +5,7 @@ from pathlib import Path
 
 import yaml
 
-from ..detect import EXTENSIONS, iter_source_files, rel
+from ..detect import EXTENSIONS, rel
 from ..i18n import pick, t
 from ..models import Severity
 from ..tools import app_dir
@@ -37,7 +37,7 @@ class PatternsSkill(Skill):
     def analyze(self, root, languages):
         rules = load_rules(self.rules_file)
         findings, per_rule = [], {}
-        for p in iter_source_files(root):
+        for p in self.source_files(root):
             lang = EXTENSIONS[p.suffix.lower()]
             try:
                 text = p.read_text(encoding="utf-8", errors="ignore")

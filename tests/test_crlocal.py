@@ -1,4 +1,5 @@
 import re
+import shutil
 from pathlib import Path
 
 import pytest
@@ -154,3 +155,34 @@ def test_mcp_server():
 
     bad = mcp_server.handle({"jsonrpc": "2.0", "id": 5, "method": "tools/call", "params": {"name": "xyz"}})
     assert bad["error"]["code"] == -32602
+
+
+@pytest.mark.skipif(not shutil.which("git"), reason="git não instalado")
+def test_revisar_so_alteracoes(tmp_path):
+    import subprocess
+
+    from crlocal.changes import ChangesError, resolve_scope
+
+    def git(*args):
+        subprocess.run(["git", "-C", str(tmp_path), "-c", "user.email=t@t", "-c", "user.name=t", *args],
+                       check=True, capture_output=True)
+
+    (tmp_path / "a.py").write_text("x = 1\n", encoding="utf-8")
+    (tmp_path / "b.py").write_text("# TODO: antigo\n", encoding="utf-8")
+    git("init", "-q", "-b", "main")
+    git("add", "-A")
+    git("commit", "-qm", "init")
+    git("checkout", "-qb", "feat")
+    (tmp_path / "a.py").write_text("x = 1  # TODO: novo\n", encoding="utf-8")
+
+    skills = [PatternsSkill()]
+    local = resolve_scope(tmp_path, "local")
+    assert local.files == {"a.py"}
+    rep = run_review(tmp_path, skills, scope=local)
+    assert {f.file for f in rep.findings} == {"a.py"} and rep.scope
+    git("commit", "-qam", "muda a")
+    with pytest.raises(ChangesError):
+        run_review(tmp_path, skills, scope=resolve_scope(tmp_path, "local"))
+    branch = resolve_scope(tmp_path, "branch")
+    assert branch.base == "main" and branch.files == {"a.py"}
+    assert {f.file for f in run_review(tmp_path, skills).findings} == {"a.py", "b.py"}

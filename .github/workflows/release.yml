@@ -96,6 +96,7 @@ jobs:
             $problemas = & $cli exemplos/projeto-ruim --skills padroes --problemas
             if (-not ($problemas -match ':\d+:1: (error|warning|info): ')) { $falhas += "saída --problemas inválida" }
           }
+          foreach ($f in $falhas) { Write-Output "::error title=Teste do .exe::$f" }  # aparece nas anotações do job
           if ($falhas) { throw ("Falhas no .exe: " + ($falhas -join "; ")) }
 
       - name: Gerar o instalador (Inno Setup)

@@ -52,6 +52,28 @@ jobs:
           (Get-Content crlocal/__init__.py) -replace '__version__ = ".*"', '__version__ = "${{ steps.versao.outputs.valor }}"' | Set-Content crlocal/__init__.py
           Get-Content crlocal/__init__.py
 
+      - name: Diagnóstico do Semgrep fora do .exe
+        continue-on-error: true
+        timeout-minutes: 6
+        shell: pwsh
+        run: |
+          python -c "import semgrep; print('semgrep', semgrep.__version__)"
+          Get-ChildItem (python -c "import semgrep, os; print(os.path.join(os.path.dirname(semgrep.__file__), 'bin'))") -ErrorAction SilentlyContinue | ForEach-Object { "bin: $($_.Name) $($_.Length)" }
+          Set-Content sg.py "import sys`nsys.argv = ['semgrep', 'scan', '--json', '--quiet', '--metrics=off', '--disable-version-check', '--timeout', '30', '--config', sys.argv[1], 'exemplos/projeto-ruim']`nfrom semgrep.main import main`nmain()"
+          foreach ($cfg in "crlocal/rules/semgrep", "rules/semgrep") {
+            $t = [Diagnostics.Stopwatch]::StartNew()
+            $p = Start-Process python -ArgumentList "sg.py",$cfg -PassThru -NoNewWindow -RedirectStandardOutput "sg-out.json" -RedirectStandardError "sg-err.txt"
+            if (-not $p.WaitForExit(120000)) {
+              $filhos = (Get-CimInstance Win32_Process | Where-Object { $_.ParentProcessId -eq $p.Id } | ForEach-Object { $_.Name }) -join ","
+              Stop-Process -Id $p.Id -Force
+              Write-Output "::warning title=Semgrep::$cfg travou fora do .exe (filhos: $filhos) stderr: $((Get-Content sg-err.txt -Raw) -replace '\s+',' ' | Select-Object -First 1)"
+            } else {
+              $err = ((Get-Content sg-err.txt -Raw) -replace '\s+', ' ')
+              if ($err.Length -gt 300) { $err = $err.Substring($err.Length - 300) }
+              Write-Output "::notice title=Semgrep::$cfg terminou em $([int]$t.Elapsed.TotalSeconds)s código $($p.ExitCode), saída $((Get-Item sg-out.json).Length) bytes. stderr: $err"
+            }
+          }
+
       - name: Gerar o app com PyInstaller
         run: pyinstaller build/CodeReviewLocal.spec --noconfirm --distpath dist --workpath build/tmp
 
@@ -70,10 +92,12 @@ jobs:
             $t = [Diagnostics.Stopwatch]::StartNew()
             $p = Start-Process $exe -ArgumentList "exemplos/projeto-ruim","--skills",$s,"--resumo",$resumo -PassThru
             if (-not $p.WaitForExit(180000)) {
-              Get-CimInstance Win32_Process | Where-Object { $_.ParentProcessId -eq $p.Id } | ForEach-Object { "  processo filho preso: $($_.Name) $($_.CommandLine)" }
+              $filhos = @(Get-CimInstance Win32_Process | Where-Object { $_.ParentProcessId -eq $p.Id })
+              $netos = @($filhos | ForEach-Object { $f = $_; Get-CimInstance Win32_Process | Where-Object { $_.ParentProcessId -eq $f.ProcessId } })
+              $presos = ($filhos + $netos | ForEach-Object { $_.Name }) -join ","
               Stop-Process -Id $p.Id -Force
               Get-CimInstance Win32_Process -Filter "Name='CodeReviewLocal.exe'" | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
-              "{0,-20} TRAVOU (mais de 180s)" -f $s; $falhas += "$s travou"; continue
+              "{0,-20} TRAVOU (mais de 180s)" -f $s; $falhas += "$s travou (processos: $presos)"; continue
             }
             if (-not (Test-Path $resumo)) { "{0,-20} sem resumo (código {1})" -f $s, $p.ExitCode; $falhas += "$s sem resumo"; continue }
             $r = (Get-Content $resumo -Raw | ConvertFrom-Json).$s

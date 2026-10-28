@@ -35,7 +35,10 @@ def find_tool(name: str) -> list[str] | None:
         if candidate.is_file():
             return [str(candidate)]
     if FROZEN and name in PY_TOOLS:
-        return [sys.executable, "--run-tool", name]
+        # o crlocal.exe (console) escreve erros no stderr; o exe da interface abriria uma janela de erro
+        # invisível e o processo ficaria parado esperando alguém fechar
+        console = Path(sys.executable).with_name("crlocal.exe" if IS_WINDOWS else "crlocal")
+        return [str(console if console.is_file() else sys.executable), "--run-tool", name]
     found = shutil.which(name)
     if found:
         return [found]
@@ -74,7 +77,7 @@ CHILD_ENV = "CRLOCAL_CHILD"
 
 def run(cmd: list[str], cwd: str | None = None, timeout: int = 300) -> subprocess.CompletedProcess:
     # CHILD_ENV avisa o .exe chamado como ferramenta para nunca abrir a interface gráfica
-    env = dict(os.environ, PYTHONIOENCODING="utf-8", SEMGREP_SEND_METRICS="off", **{CHILD_ENV: "1"})
+    env = dict(os.environ, PYTHONIOENCODING="utf-8", PYTHONUTF8="1", SEMGREP_SEND_METRICS="off", **{CHILD_ENV: "1"})
     return subprocess.run(
         cmd, cwd=cwd, capture_output=True, stdin=subprocess.DEVNULL, text=True, encoding="utf-8",
         errors="replace", timeout=timeout, env=env, creationflags=CREATE_NO_WINDOW,

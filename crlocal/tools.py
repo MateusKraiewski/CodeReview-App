@@ -35,7 +35,10 @@ def find_tool(name: str) -> list[str] | None:
         if candidate.is_file():
             return [str(candidate)]
     if FROZEN and name in PY_TOOLS:
-        return [sys.executable, "--run-tool", name]
+        # o crlocal.exe (console) escreve erros no stderr; o exe da interface abriria uma janela de erro
+        # invisível e o processo ficaria parado esperando alguém fechar
+        console = Path(sys.executable).with_name("crlocal.exe" if IS_WINDOWS else "crlocal")
+        return [str(console if console.is_file() else sys.executable), "--run-tool", name]
     found = shutil.which(name)
     if found:
         return [found]
@@ -45,12 +48,12 @@ def find_tool(name: str) -> list[str] | None:
 
 def ensure_std_streams() -> None:
     """No .exe sem console, stdout/stderr vêm como None: reabre os pipes herdados do processo pai."""
-    for fd, attr in ((1, "stdout"), (2, "stderr")):
+    for fd, attr, mode in ((0, "stdin", "r"), (1, "stdout", "w"), (2, "stderr", "w")):
         if getattr(sys, attr) is None:
             try:
-                setattr(sys, attr, open(fd, "w", encoding="utf-8", closefd=False))  # noqa: SIM115
+                setattr(sys, attr, open(fd, mode, encoding="utf-8", closefd=False))  # noqa: SIM115
             except OSError:
-                setattr(sys, attr, open(os.devnull, "w", encoding="utf-8"))  # noqa: SIM115
+                setattr(sys, attr, open(os.devnull, mode, encoding="utf-8"))  # noqa: SIM115
 
 
 def dispatch_tool(argv: list[str]) -> int | None:
@@ -69,9 +72,13 @@ def dispatch_tool(argv: list[str]) -> int | None:
     return result if isinstance(result, int) else 0
 
 
-def run(cmd: list[str], cwd: str | None = None, timeout: int = 900) -> subprocess.CompletedProcess:
-    env = dict(os.environ, PYTHONIOENCODING="utf-8", SEMGREP_SEND_METRICS="off")
+CHILD_ENV = "CRLOCAL_CHILD"
+
+
+def run(cmd: list[str], cwd: str | None = None, timeout: int = 300) -> subprocess.CompletedProcess:
+    # CHILD_ENV avisa o .exe chamado como ferramenta para nunca abrir a interface gráfica
+    env = dict(os.environ, PYTHONIOENCODING="utf-8", PYTHONUTF8="1", SEMGREP_SEND_METRICS="off", **{CHILD_ENV: "1"})
     return subprocess.run(
-        cmd, cwd=cwd, capture_output=True, text=True, encoding="utf-8",
+        cmd, cwd=cwd, capture_output=True, stdin=subprocess.DEVNULL, text=True, encoding="utf-8",
         errors="replace", timeout=timeout, env=env, creationflags=CREATE_NO_WINDOW,
     )

@@ -9,6 +9,7 @@ from . import __version__
 from .i18n import t
 from .models import Finding, Report, Severity
 
+CELL_MAX_CHARS = 700
 SEV_COLORS = {Severity.CRITICA: "#7f1d1d", Severity.ALTA: "#dc2626", Severity.MEDIA: "#d97706",
               Severity.BAIXA: "#2563eb", Severity.INFO: "#6b7280"}
 TOP_N = 10
@@ -49,6 +50,7 @@ def to_markdown(report: Report) -> str:
         f"- **{t('r.project')}:** `{report.project_path}`",
         f"- **{t('r.date')}:** {report.started_at}  ·  **{t('r.duration')}:** {report.duration_s}s",
         f"- **{t('r.languages')}:** " + (", ".join(f"{k} ({v})" for k, v in report.languages.items()) or t("r.none_detected")),
+        *([f"- **{t('r.scope')}:** {report.scope}"] if report.scope else []),
         f"- **{t('r.score')}:** **{score}/100**, {t('r.grade')} {grade(score)}",
         "",
         f"## {t('r.by_severity')}",
@@ -97,9 +99,16 @@ def to_pdf(report: Report, path: str | Path) -> None:
     h1, h2 = ss["Title"], ss["Heading2"]
     h3 = ParagraphStyle("h3", parent=ss["Heading3"], keepWithNext=1)
     body = ParagraphStyle("body", parent=ss["BodyText"], fontSize=9, leading=11)
-    cell = ParagraphStyle("cell", parent=body, fontSize=7.5, leading=9)
+    # wordWrap CJK quebra palavras longas (caminhos, URLs) que não caberiam na coluna
+    cell = ParagraphStyle("cell", parent=body, fontSize=7.5, leading=9, wordWrap="CJK")
     mono = ParagraphStyle("mono", parent=cell, fontName="Courier")
-    p = lambda t, s=cell: Paragraph(escape(str(t or "")), s)  # noqa: E731
+
+    def p(text, style=cell):
+        # textos muito longos (mensagens de ferramentas, listas de duplicação) estourariam a altura da página
+        text = str(text or "")
+        if len(text) > CELL_MAX_CHARS:
+            text = text[:CELL_MAX_CHARS].rstrip() + " […]"
+        return Paragraph(escape(text), style)
 
     page = landscape(A4)
     doc = SimpleDocTemplate(str(path), pagesize=page, leftMargin=12 * mm, rightMargin=12 * mm,
@@ -121,6 +130,7 @@ def to_pdf(report: Report, path: str | Path) -> None:
         Paragraph(f"<b>{t('r.project')}:</b> {escape(report.project_path)}", body),
         Paragraph(f"<b>{t('r.date')}:</b> {report.started_at} · <b>{t('r.duration')}:</b> {report.duration_s}s", body),
         Paragraph(f"<b>{t('r.languages')}:</b> " + escape(", ".join(f"{k} ({v})" for k, v in report.languages.items()) or "-"), body),
+        *([Paragraph(f"<b>{t('r.scope')}:</b> {escape(report.scope)}", body)] if report.scope else []),
         Spacer(1, 4 * mm),
         Paragraph(f"<font size=22><b>{score}/100</b></font>  {t('r.grade')} {grade(score)}", body),
         Spacer(1, 6 * mm),
@@ -134,7 +144,7 @@ def to_pdf(report: Report, path: str | Path) -> None:
         t1.setStyle([("TEXTCOLOR", (0, i), (0, i), colors.HexColor(SEV_COLORS[s]))])
     skill_rows = [[t("r.skill"), t("r.status"), t("r.findings"), t("r.time"), t("r.note")]] + [
         [p(r.title), t("status." + r.status), len(r.findings), f"{r.duration_s}s", p(r.message)] for r in report.results]
-    t2 = Table(skill_rows, colWidths=[75 * mm, 22 * mm, 18 * mm, 16 * mm, width - 131 * mm], repeatRows=1)
+    t2 = Table(skill_rows, colWidths=[75 * mm, 22 * mm, 18 * mm, 16 * mm, width - 131 * mm], repeatRows=1, splitInRow=1)
     t2.setStyle(grid)
     story += [Paragraph(t("r.by_severity"), h2), t1, Spacer(1, 4 * mm),
               Paragraph(t("r.skills"), h2), t2]
@@ -143,7 +153,7 @@ def to_pdf(report: Report, path: str | Path) -> None:
     if top:
         rows = [["#", t("r.severity"), t("r.location"), t("r.problem")]] + [
             [i, f.severity.label, p(_loc(f), mono), p(f.message)] for i, f in enumerate(top, 1)]
-        tt = Table(rows, colWidths=[8 * mm, 22 * mm, 70 * mm, width - 100 * mm], repeatRows=1)
+        tt = Table(rows, colWidths=[8 * mm, 22 * mm, 70 * mm, width - 100 * mm], repeatRows=1, splitInRow=1)
         tt.setStyle(grid)
         story += [Spacer(1, 4 * mm), KeepTogether([Paragraph(t("r.priorities"), h2), tt])]
 
@@ -156,7 +166,7 @@ def to_pdf(report: Report, path: str | Path) -> None:
         rows = [[t("r.line"), t("r.severity")[:4] + ".", t("r.skill"), t("r.rule"), t("r.problem"), t("r.suggestion")]] + [
             [f.line or "-", f.severity.label, p(f.skill), p(f.rule_id, mono), p(f.message), p(f.suggestion)]
             for f in items]
-        tf = Table(rows, colWidths=cols, repeatRows=1)
+        tf = Table(rows, colWidths=cols, repeatRows=1, splitInRow=1)
         tf.setStyle(grid)
         for i, f in enumerate(items, 1):
             tf.setStyle([("TEXTCOLOR", (1, i), (1, i), colors.HexColor(SEV_COLORS[f.severity]))])

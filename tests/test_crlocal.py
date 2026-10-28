@@ -1,3 +1,5 @@
+import re
+import shutil
 from pathlib import Path
 
 import pytest
@@ -78,3 +80,109 @@ def test_relatorio_nos_tres_idiomas(lang, title, tmp_path):
     files = save(report, tmp_path)
     assert {p.suffix for p in files} == {".md", ".pdf"}
     assert all(p.stat().st_size > 500 for p in files)
+
+
+def test_comparacao_de_versoes():
+    from crlocal.updater import is_newer, parse_version
+
+    assert parse_version("v1.2.3") == (1, 2, 3)
+    assert parse_version("0.1.0-dev.7") == (0, 1, 0)
+    assert is_newer("v0.2.0", "0.1.9")
+    assert is_newer("1.0.0", "0.9.9")
+    assert not is_newer("v0.1.0", "0.1.0")
+    assert not is_newer("0.1.0", "0.2.0")
+
+
+def test_le_release_do_github():
+    from crlocal.updater import parse_release
+
+    data = {"tag_name": "v0.3.0", "html_url": "https://github.com/x/y/releases/tag/v0.3.0", "body": "notas",
+            "assets": [{"name": "CodeReviewLocal-0.3.0-portatil.zip", "browser_download_url": "zip"},
+                       {"name": "CodeReviewLocal-Setup-0.3.0.exe", "browser_download_url": "https://x/setup.exe"}]}
+    u = parse_release(data)
+    assert (u.version, u.setup_url, u.notes) == ("0.3.0", "https://x/setup.exe", "notas")
+
+
+def test_sem_internet_nao_quebra(monkeypatch):
+    import urllib.request
+
+    from crlocal import updater
+
+    def falha(*_a, **_k):
+        raise OSError("sem rede")
+
+    monkeypatch.setattr(urllib.request, "urlopen", falha)
+    assert updater.check() is None
+
+
+def test_sarif_e_problemas():
+    from crlocal import sarif
+    from crlocal.runner import run_review
+    from crlocal.skills import all_skills
+
+    root = Path(__file__).resolve().parent.parent / "exemplos" / "projeto-ruim"
+    report = run_review(root, [s for s in all_skills() if s.id == "padroes"])
+    doc = sarif.to_sarif(report)
+    run = doc["runs"][0]
+    assert doc["version"] == "2.1.0"
+    assert len(run["results"]) == len(report.findings) > 0
+    rule_ids = {r["id"] for r in run["tool"]["driver"]["rules"]}
+    assert all(r["ruleId"] in rule_ids for r in run["results"])
+    lines = sarif.problem_lines(report)
+    pattern = re.compile(r"^(.*):(\d+):(\d+): (error|warning|info): (.*)$")
+    assert lines and all(pattern.match(line) for line in lines)
+
+
+def test_mcp_server():
+    from crlocal import mcp_server
+
+    init = mcp_server.handle({"jsonrpc": "2.0", "id": 1, "method": "initialize",
+                              "params": {"protocolVersion": "2025-03-26"}})
+    assert init["result"]["protocolVersion"] == "2025-03-26"
+    assert mcp_server.handle({"jsonrpc": "2.0", "method": "notifications/initialized"}) is None
+    names = {t["name"] for t in mcp_server.handle({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})["result"]["tools"]}
+    assert names == {"code_review", "achados", "listar_skills"}
+
+    root = str(Path(__file__).resolve().parent.parent / "exemplos" / "projeto-ruim")
+    call = mcp_server.handle({"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {
+        "name": "code_review", "arguments": {"pasta": root, "skills": ["padroes"], "salvar_relatorio": False}}})
+    assert not call["result"]["isError"]
+    assert "Nota:" in call["result"]["content"][0]["text"]
+
+    det = mcp_server.handle({"jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": {
+        "name": "achados", "arguments": {"pasta": root, "severidade_minima": "alta"}}})
+    assert "achado(s)" in det["result"]["content"][0]["text"]
+
+    bad = mcp_server.handle({"jsonrpc": "2.0", "id": 5, "method": "tools/call", "params": {"name": "xyz"}})
+    assert bad["error"]["code"] == -32602
+
+
+@pytest.mark.skipif(not shutil.which("git"), reason="git não instalado")
+def test_revisar_so_alteracoes(tmp_path):
+    import subprocess
+
+    from crlocal.changes import ChangesError, resolve_scope
+
+    def git(*args):
+        subprocess.run(["git", "-C", str(tmp_path), "-c", "user.email=t@t", "-c", "user.name=t", *args],
+                       check=True, capture_output=True)
+
+    (tmp_path / "a.py").write_text("x = 1\n", encoding="utf-8")
+    (tmp_path / "b.py").write_text("# TODO: antigo\n", encoding="utf-8")
+    git("init", "-q", "-b", "main")
+    git("add", "-A")
+    git("commit", "-qm", "init")
+    git("checkout", "-qb", "feat")
+    (tmp_path / "a.py").write_text("x = 1  # TODO: novo\n", encoding="utf-8")
+
+    skills = [PatternsSkill()]
+    local = resolve_scope(tmp_path, "local")
+    assert local.files == {"a.py"}
+    rep = run_review(tmp_path, skills, scope=local)
+    assert {f.file for f in rep.findings} == {"a.py"} and rep.scope
+    git("commit", "-qam", "muda a")
+    with pytest.raises(ChangesError):
+        run_review(tmp_path, skills, scope=resolve_scope(tmp_path, "local"))
+    branch = resolve_scope(tmp_path, "branch")
+    assert branch.base == "main" and branch.files == {"a.py"}
+    assert {f.file for f in run_review(tmp_path, skills).findings} == {"a.py", "b.py"}

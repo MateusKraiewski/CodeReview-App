@@ -18,9 +18,8 @@ LIZARD_LANGS = {"Python", "C#", "JavaScript", "TypeScript", "Java", "Kotlin", "G
                 "PHP", "C", "C++", "Swift", "Rust", "Scala"}
 
 
-def _analyze_files(root, extensions):
-    files = [str(p) for p in iter_source_files(root)]
-    return list(lizard.analyze_files(files, exts=lizard.get_extensions(extensions)))
+def _analyze_files(files, extensions):
+    return list(lizard.analyze_files([str(p) for p in files], exts=lizard.get_extensions(extensions)))
 
 
 class ComplexitySkill(Skill):
@@ -30,7 +29,7 @@ class ComplexitySkill(Skill):
 
     def analyze(self, root, languages):
         findings = []
-        for info in _analyze_files(root, []):
+        for info in _analyze_files(self.source_files(root), []):
             path = rel(info.filename, root)
             for fn in info.function_list:
                 ccn, nloc, params = fn.cyclomatic_complexity, fn.nloc, len(fn.parameters)

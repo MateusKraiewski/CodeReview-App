@@ -1,0 +1,9 @@
+{
+  "servers": {
+    "codereview-local": {
+      "type": "stdio",
+      "command": "crlocal",
+      "args": ["--mcp"]
+    }
+  }
+}

@@ -1,0 +1,218 @@
+# Regras do time / Team rules / Reglas del equipo
+# Campos: id, languages, pattern (regex), severity (critica|alta|media|baixa|info),
+#         message e suggestion: texto simples ou {pt: ..., en: ..., es: ...}
+# {match} na mensagem é substituído pelo trecho encontrado.
+rules:
+  # ---------- C# ----------
+  - id: cs-interface-sem-I
+    languages: [C#]
+    pattern: '\binterface\s+(?!I[A-Z])\w+'
+    severity: baixa
+    message:
+      pt: "Interface fora do padrão de nome: '{match}'"
+      en: "Interface does not follow the naming convention: '{match}'"
+      es: "Interfaz fuera del patrón de nombres: '{match}'"
+    suggestion:
+      pt: "Interfaces em C# devem começar com 'I' (ex.: IUserRepository)."
+      en: "C# interfaces should start with 'I' (e.g. IUserRepository)."
+      es: "Las interfaces en C# deben empezar con 'I' (ej.: IUserRepository)."
+  - id: cs-tipo-nao-pascalcase
+    languages: [C#]
+    pattern: '\b(class|struct|record|enum)\s+[a-z_]\w*'
+    severity: baixa
+    message:
+      pt: "Tipo não está em PascalCase: '{match}'"
+      en: "Type is not PascalCase: '{match}'"
+      es: "El tipo no está en PascalCase: '{match}'"
+    suggestion:
+      pt: "Use PascalCase para classes, structs, records e enums."
+      en: "Use PascalCase for classes, structs, records and enums."
+      es: "Use PascalCase para clases, structs, records y enums."
+  - id: cs-async-sem-sufixo
+    languages: [C#]
+    pattern: '\basync\s+(?:Task|ValueTask)(?:<[^>\n]+>)?\s+(?!Main\b)[A-Za-z_]\w*(?<!Async)\s*\('
+    severity: baixa
+    exclude_paths: 'Controller|Handler|Tests?'
+    message:
+      pt: "Método assíncrono sem sufixo Async: '{match}'"
+      en: "Async method without the Async suffix: '{match}'"
+      es: "Método asíncrono sin sufijo Async: '{match}'"
+    suggestion:
+      pt: "Métodos que retornam Task devem terminar com 'Async'."
+      en: "Methods returning Task should end with 'Async'."
+      es: "Los métodos que devuelven Task deben terminar en 'Async'."
+  - id: cs-async-void
+    languages: [C#]
+    pattern: '\basync\s+void\s+\w+\s*\((?![^)]*EventArgs)'
+    severity: alta
+    message:
+      pt: "'async void' fora de event handler: '{match}'"
+      en: "'async void' outside an event handler: '{match}'"
+      es: "'async void' fuera de un event handler: '{match}'"
+    suggestion:
+      pt: "Retorne Task. Exceções em async void derrubam o processo e não podem ser aguardadas."
+      en: "Return Task. Exceptions in async void crash the process and cannot be awaited."
+      es: "Devuelva Task. Las excepciones en async void tumban el proceso y no se pueden esperar."
+  - id: cs-catch-vazio
+    languages: [C#]
+    pattern: 'catch\s*(\([^)]*\))?\s*\{\s*\}'
+    severity: alta
+    message:
+      pt: "Bloco catch vazio engole exceções."
+      en: "Empty catch block swallows exceptions."
+      es: "Bloque catch vacío que se traga las excepciones."
+    suggestion:
+      pt: "Registre o erro (ILogger) ou relance com 'throw;'."
+      en: "Log the error (ILogger) or rethrow with 'throw;'."
+      es: "Registre el error (ILogger) o relance con 'throw;'."
+  - id: cs-throw-ex
+    languages: [C#]
+    pattern: '\bthrow\s+(ex|e|exception)\s*;'
+    severity: media
+    message:
+      pt: "'{match}' perde o stack trace original."
+      en: "'{match}' loses the original stack trace."
+      es: "'{match}' pierde el stack trace original."
+    suggestion:
+      pt: "Use apenas 'throw;' para relançar."
+      en: "Use just 'throw;' to rethrow."
+      es: "Use solo 'throw;' para relanzar."
+  - id: cs-console-writeline
+    languages: [C#]
+    pattern: '\bConsole\.Write(Line)?\s*\('
+    severity: baixa
+    exclude_paths: 'Program\.cs$|Tests?'
+    message:
+      pt: "Console.WriteLine no código: use logging estruturado."
+      en: "Console.WriteLine in code: use structured logging."
+      es: "Console.WriteLine en el código: use logging estructurado."
+    suggestion:
+      pt: "Injete ILogger<T> e use _logger.LogInformation(...)."
+      en: "Inject ILogger<T> and use _logger.LogInformation(...)."
+      es: "Inyecte ILogger<T> y use _logger.LogInformation(...)."
+  - id: cs-result-bloqueante
+    languages: [C#]
+    pattern: '\.(Result\b|Wait\(\))'
+    severity: media
+    message:
+      pt: "Bloqueio síncrono de Task ('{match}') pode causar deadlock."
+      en: "Synchronous blocking on Task ('{match}') can cause deadlocks."
+      es: "El bloqueo síncrono de Task ('{match}') puede causar deadlocks."
+    suggestion:
+      pt: "Use await em vez de .Result/.Wait()."
+      en: "Use await instead of .Result/.Wait()."
+      es: "Use await en lugar de .Result/.Wait()."
+  - id: cs-datetime-now
+    languages: [C#]
+    pattern: '\bDateTime\.Now\b'
+    severity: info
+    message:
+      pt: "DateTime.Now depende do fuso do servidor."
+      en: "DateTime.Now depends on the server time zone."
+      es: "DateTime.Now depende de la zona horaria del servidor."
+    suggestion:
+      pt: "Prefira DateTime.UtcNow, DateTimeOffset ou TimeProvider (testável)."
+      en: "Prefer DateTime.UtcNow, DateTimeOffset or TimeProvider (testable)."
+      es: "Prefiera DateTime.UtcNow, DateTimeOffset o TimeProvider (testeable)."
+  - id: cs-sql-concatenado
+    languages: [C#]
+    pattern: '(?i)"\s*(select|insert|update|delete)\b[^"\n]*"\s*\+'
+    severity: alta
+    message:
+      pt: "SQL montado por concatenação de string."
+      en: "SQL built by string concatenation."
+      es: "SQL construido por concatenación de strings."
+    suggestion:
+      pt: "Use parâmetros (SqlParameter, Dapper @param ou EF Core) para evitar SQL injection."
+      en: "Use parameters (SqlParameter, Dapper @param or EF Core) to prevent SQL injection."
+      es: "Use parámetros (SqlParameter, Dapper @param o EF Core) para evitar SQL injection."
+
+  # ---------- Python ----------
+  - id: py-funcao-camelcase
+    languages: [Python]
+    pattern: '^\s*(async\s+)?def\s+[a-z]+[A-Z]\w*\s*\('
+    severity: baixa
+    message:
+      pt: "Função fora do snake_case: '{match}'"
+      en: "Function is not snake_case: '{match}'"
+      es: "Función fuera de snake_case: '{match}'"
+    suggestion:
+      pt: "PEP 8: funções e variáveis em snake_case."
+      en: "PEP 8: functions and variables in snake_case."
+      es: "PEP 8: funciones y variables en snake_case."
+  - id: py-classe-nao-pascalcase
+    languages: [Python]
+    pattern: '^\s*class\s+[a-z_]\w*'
+    severity: baixa
+    message:
+      pt: "Classe fora do PascalCase: '{match}'"
+      en: "Class is not PascalCase: '{match}'"
+      es: "Clase fuera de PascalCase: '{match}'"
+    suggestion:
+      pt: "PEP 8: classes em PascalCase."
+      en: "PEP 8: classes in PascalCase."
+      es: "PEP 8: clases en PascalCase."
+  - id: py-except-generico
+    languages: [Python]
+    pattern: '^\s*except\s*:\s*$'
+    severity: media
+    message:
+      pt: "'except:' captura tudo, inclusive KeyboardInterrupt."
+      en: "'except:' catches everything, including KeyboardInterrupt."
+      es: "'except:' captura todo, incluso KeyboardInterrupt."
+    suggestion:
+      pt: "Capture exceções específicas (except ValueError:)."
+      en: "Catch specific exceptions (except ValueError:)."
+      es: "Capture excepciones específicas (except ValueError:)."
+  - id: py-print
+    languages: [Python]
+    pattern: '^\s*print\('
+    severity: info
+    exclude_paths: 'tests?/|scripts?/|cli'
+    message:
+      pt: "print() no código: considere logging."
+      en: "print() in code: consider logging."
+      es: "print() en el código: considere logging."
+    suggestion:
+      pt: "Use o módulo logging."
+      en: "Use the logging module."
+      es: "Use el módulo logging."
+
+  # ---------- JS/TS ----------
+  - id: js-console-log
+    languages: [JavaScript, TypeScript]
+    pattern: '\bconsole\.(log|debug)\s*\('
+    severity: baixa
+    message:
+      pt: "console.log esquecido no código."
+      en: "Leftover console.log in code."
+      es: "console.log olvidado en el código."
+    suggestion:
+      pt: "Remova ou use um logger configurável."
+      en: "Remove it or use a configurable logger."
+      es: "Elimínelo o use un logger configurable."
+  - id: js-any
+    languages: [TypeScript]
+    pattern: ':\s*any\b'
+    severity: baixa
+    message:
+      pt: "Uso de 'any' desliga a checagem de tipos."
+      en: "Using 'any' disables type checking."
+      es: "Usar 'any' desactiva la verificación de tipos."
+    suggestion:
+      pt: "Use tipos explícitos ou 'unknown'."
+      en: "Use explicit types or 'unknown'."
+      es: "Use tipos explícitos o 'unknown'."
+
+  # ---------- Geral / General ----------
+  - id: todo-fixme
+    pattern: '(?://|#|/\*)\s*(TODO|FIXME|HACK|XXX)\b.*'
+    severity: info
+    message:
+      pt: "Pendência no código: {match}"
+      en: "Pending item in code: {match}"
+      es: "Pendiente en el código: {match}"
+    suggestion:
+      pt: "Transforme em tarefa no backlog ou resolva antes do merge."
+      en: "Turn it into a backlog task or resolve it before merging."
+      es: "Conviértalo en una tarea del backlog o resuélvalo antes del merge."

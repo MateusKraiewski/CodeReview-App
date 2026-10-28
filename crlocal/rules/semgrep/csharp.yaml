@@ -1,0 +1,34 @@
+rules:
+  - id: cs-sqlcommand-concatenado
+    languages: [csharp]
+    severity: ERROR
+    message: "SqlCommand com SQL montado por concatenação/interpolação: risco de SQL injection."
+    metadata: {cwe: ["CWE-89: SQL Injection"], impact: HIGH, message_en: "SqlCommand built with string concatenation/interpolation: SQL injection risk.", message_es: "SqlCommand con SQL construido por concatenación/interpolación: riesgo de SQL injection."}
+    pattern-either:
+      - pattern: new SqlCommand($"...", ...)
+      - pattern: new SqlCommand("..." + $X, ...)
+      - pattern: $DB.Database.ExecuteSqlRaw($"...", ...)
+      - pattern: $DB.Database.ExecuteSqlRaw("..." + $X, ...)
+      - pattern: $DB.FromSqlRaw($"...", ...)
+  - id: cs-md5-sha1
+    languages: [csharp]
+    severity: WARNING
+    message: "Algoritmo de hash fraco (MD5/SHA1)."
+    metadata: {cwe: ["CWE-327: Broken Crypto"], message_en: "Weak hash algorithm (MD5/SHA1).", message_es: "Algoritmo de hash débil (MD5/SHA1)."}
+    pattern-either:
+      - pattern: MD5.Create()
+      - pattern: SHA1.Create()
+  - id: cs-binaryformatter
+    languages: [csharp]
+    severity: ERROR
+    message: "BinaryFormatter é inseguro (desserialização remota de código)."
+    metadata: {cwe: ["CWE-502: Deserialization of Untrusted Data"], impact: CRITICAL, message_en: "BinaryFormatter is insecure (remote code via deserialization).", message_es: "BinaryFormatter es inseguro (ejecución remota vía deserialización)."}
+    pattern: new BinaryFormatter()
+  - id: cs-certificado-ignorado
+    languages: [csharp]
+    severity: ERROR
+    message: "Validação de certificado TLS desativada."
+    metadata: {cwe: ["CWE-295: Improper Certificate Validation"], impact: HIGH, message_en: "TLS certificate validation disabled.", message_es: "Validación de certificado TLS desactivada."}
+    pattern-either:
+      - pattern: $H.ServerCertificateCustomValidationCallback = (...) => true
+      - pattern: ServicePointManager.ServerCertificateValidationCallback = (...) => true

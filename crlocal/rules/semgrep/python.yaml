@@ -1,0 +1,17 @@
+rules:
+  - id: py-sql-fstring
+    languages: [python]
+    severity: ERROR
+    message: "SQL montado com f-string/format/concatenação: risco de SQL injection."
+    metadata: {cwe: ["CWE-89: SQL Injection"], impact: HIGH, message_en: "SQL built with f-string/format/concatenation: SQL injection risk.", message_es: "SQL construido con f-string/format/concatenación: riesgo de SQL injection."}
+    pattern-either:
+      - pattern: $CUR.execute(f"...", ...)
+      - pattern: $CUR.execute("..." % $X, ...)
+      - pattern: $CUR.execute("..." + $X, ...)
+      - pattern: $CUR.execute("...".format(...), ...)
+  - id: py-requests-sem-verificacao
+    languages: [python]
+    severity: WARNING
+    message: "requests com verify=False desativa a validação TLS."
+    metadata: {cwe: ["CWE-295"], message_en: "requests with verify=False disables TLS validation.", message_es: "requests con verify=False desactiva la validación TLS."}
+    pattern: requests.$M(..., verify=False, ...)

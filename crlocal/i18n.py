@@ -1,0 +1,226 @@
+"""Traduções da interface e dos relatórios: pt (padrão), en, es."""
+from __future__ import annotations
+
+LANGUAGES = {"pt": "Português", "en": "English", "es": "Español"}
+DEFAULT = "pt"
+_current = DEFAULT
+
+# chave: (pt, en, es)
+_T: dict[str, tuple[str, str, str]] = {
+    # severidades e conceitos
+    "sev.CRITICA": ("Crítica", "Critical", "Crítica"),
+    "sev.ALTA": ("Alta", "High", "Alta"),
+    "sev.MEDIA": ("Média", "Medium", "Media"),
+    "sev.BAIXA": ("Baixa", "Low", "Baja"),
+    "sev.INFO": ("Info", "Info", "Info"),
+    "grade.A": ("A (excelente)", "A (excellent)", "A (excelente)"),
+    "grade.B": ("B (bom)", "B (good)", "B (bueno)"),
+    "grade.C": ("C (atenção)", "C (needs attention)", "C (atención)"),
+    "grade.D": ("D (ruim)", "D (poor)", "D (malo)"),
+    "grade.E": ("E (crítico)", "E (critical)", "E (crítico)"),
+    "status.ok": ("Executada", "Ran", "Ejecutada"),
+    "status.skipped": ("Pulada", "Skipped", "Omitida"),
+    "status.error": ("Erro", "Error", "Error"),
+
+    # skills
+    "skill.segredos.title": ("Segredos no código (Gitleaks)", "Secrets in code (Gitleaks)", "Secretos en el código (Gitleaks)"),
+    "skill.segredos.desc": ("Senhas, tokens, chaves de API e certificados escritos no código.",
+                            "Passwords, tokens, API keys and certificates written in code.",
+                            "Contraseñas, tokens, claves de API y certificados escritos en el código."),
+    "skill.seguranca-sast.title": ("Segurança multi-linguagem (Semgrep)", "Multi-language security (Semgrep)", "Seguridad multilenguaje (Semgrep)"),
+    "skill.seguranca-sast.desc": ("Injeção de SQL/comando, XSS, criptografia fraca, desserialização insegura etc.",
+                                  "SQL/command injection, XSS, weak crypto, insecure deserialization, etc.",
+                                  "Inyección SQL/comandos, XSS, criptografía débil, deserialización insegura, etc."),
+    "skill.seguranca-devskim.title": ("Segurança (Microsoft DevSkim)", "Security (Microsoft DevSkim)", "Seguridad (Microsoft DevSkim)"),
+    "skill.seguranca-devskim.desc": ("Padrões inseguros em C#, JS, Python, Java, C/C++ e outras.",
+                                     "Insecure patterns in C#, JS, Python, Java, C/C++ and more.",
+                                     "Patrones inseguros en C#, JS, Python, Java, C/C++ y otros."),
+    "skill.seguranca-python.title": ("Segurança Python (Bandit)", "Python security (Bandit)", "Seguridad Python (Bandit)"),
+    "skill.seguranca-python.desc": ("Uso de eval/exec, subprocess com shell, pickle, hashes fracos etc.",
+                                    "eval/exec, subprocess with shell, pickle, weak hashes, etc.",
+                                    "Uso de eval/exec, subprocess con shell, pickle, hashes débiles, etc."),
+    "skill.dependencias.title": ("Dependências vulneráveis (OSV-Scanner)", "Vulnerable dependencies (OSV-Scanner)", "Dependencias vulnerables (OSV-Scanner)"),
+    "skill.dependencias.desc": ("Pacotes NuGet, npm, PyPI, Maven etc. com vulnerabilidades conhecidas (CVE).",
+                                "NuGet, npm, PyPI, Maven... packages with known vulnerabilities (CVE).",
+                                "Paquetes NuGet, npm, PyPI, Maven, etc. con vulnerabilidades conocidas (CVE)."),
+    "skill.qualidade-csharp.title": ("Qualidade C# (Roslyn Analyzers)", "C# quality (Roslyn Analyzers)", "Calidad C# (Roslyn Analyzers)"),
+    "skill.qualidade-csharp.desc": ("Regras oficiais da Microsoft (CAxxxx/IDExxxx): design, desempenho, confiabilidade, segurança e estilo.",
+                                    "Official Microsoft rules (CAxxxx/IDExxxx): design, performance, reliability, security and style.",
+                                    "Reglas oficiales de Microsoft (CAxxxx/IDExxxx): diseño, rendimiento, confiabilidad, seguridad y estilo."),
+    "skill.qualidade-python.title": ("Qualidade Python (Ruff)", "Python quality (Ruff)", "Calidad Python (Ruff)"),
+    "skill.qualidade-python.desc": ("Bugs prováveis, código morto, imports não usados, simplificações e PEP 8.",
+                                    "Likely bugs, dead code, unused imports, simplifications and PEP 8.",
+                                    "Bugs probables, código muerto, imports no usados, simplificaciones y PEP 8."),
+    "skill.complexidade.title": ("Complexidade e tamanho de funções (Lizard)", "Function complexity and size (Lizard)", "Complejidad y tamaño de funciones (Lizard)"),
+    "skill.complexidade.desc": ("Complexidade ciclomática alta, métodos longos e muitos parâmetros.",
+                                "High cyclomatic complexity, long methods and too many parameters.",
+                                "Complejidad ciclomática alta, métodos largos y demasiados parámetros."),
+    "skill.duplicacao.title": ("Código duplicado (Lizard)", "Duplicated code (Lizard)", "Código duplicado (Lizard)"),
+    "skill.duplicacao.desc": ("Blocos de código copiados e colados.", "Copy-pasted code blocks.", "Bloques de código copiados y pegados."),
+    "skill.testes.title": ("Cobertura de testes (heurística)", "Test coverage (heuristic)", "Cobertura de pruebas (heurística)"),
+    "skill.testes.desc": ("Projeto sem testes e arquivos relevantes sem teste correspondente.",
+                          "Project without tests and relevant files without a matching test.",
+                          "Proyecto sin pruebas y archivos relevantes sin prueba correspondiente."),
+    "skill.padroes.title": ("Nomenclatura e padrões do time", "Naming and team conventions", "Nomenclatura y convenciones del equipo"),
+    "skill.padroes.desc": ("Regras configuráveis em YAML: nomes, logs esquecidos, catch vazio, TODO/FIXME, arquivos grandes.",
+                           "Configurable YAML rules: names, leftover logs, empty catch, TODO/FIXME, large files.",
+                           "Reglas configurables en YAML: nombres, logs olvidados, catch vacío, TODO/FIXME, archivos grandes."),
+
+    # mensagens das skills
+    "skip.no_lang": ("Nenhuma linguagem compatível no projeto.", "No compatible language in the project.", "Ningún lenguaje compatible en el proyecto."),
+    "skip.tool_missing": ("{tool} não encontrado (coloque {tool}.exe em tools/).", "{tool} not found (put {tool}.exe in tools/).",
+                          "{tool} no encontrado (coloque {tool}.exe en tools/)."),
+    "skip.semgrep_rules": ("Nenhuma regra Semgrep offline encontrada.", "No offline Semgrep rules found.", "No se encontraron reglas Semgrep offline."),
+    "skip.dotnet": (".NET SDK não encontrado. Instale o SDK para habilitar esta skill.", ".NET SDK not found. Install it to enable this skill.",
+                    ".NET SDK no encontrado. Instálelo para habilitar esta skill."),
+    "skip.no_sln": ("Nenhum .sln ou .csproj encontrado.", "No .sln or .csproj found.", "No se encontró ningún .sln o .csproj."),
+    "skip.no_deps": ("Nenhum arquivo de dependências encontrado.", "No dependency files found.", "No se encontraron archivos de dependencias."),
+    "err.no_output": ("{tool} não gerou relatório", "{tool} produced no report", "{tool} no generó informe"),
+    "err.build": ("Falha no build de {name} (os pacotes NuGet precisam estar no cache local): {tail}",
+                  "Build of {name} failed (NuGet packages must be in the local cache): {tail}",
+                  "Falló el build de {name} (los paquetes NuGet deben estar en la caché local): {tail}"),
+    "f.secret.sug": ("Remova o segredo do código, revogue/troque a credencial e use variáveis de ambiente, User Secrets ou um cofre (Key Vault).",
+                     "Remove the secret from code, revoke/rotate the credential and use environment variables, User Secrets or a vault (Key Vault).",
+                     "Elimine el secreto del código, revoque/cambie la credencial y use variables de entorno, User Secrets o un almacén (Key Vault)."),
+    "f.ccn": ("'{name}' tem complexidade ciclomática {value} (limite {limit}).", "'{name}' has cyclomatic complexity {value} (limit {limit}).",
+              "'{name}' tiene complejidad ciclomática {value} (límite {limit})."),
+    "f.ccn.sug": ("Extraia métodos menores, use early return e substitua cadeias de if/switch por polimorfismo ou tabelas.",
+                  "Extract smaller methods, use early returns and replace if/switch chains with polymorphism or lookup tables.",
+                  "Extraiga métodos más pequeños, use early return y reemplace cadenas de if/switch por polimorfismo o tablas."),
+    "f.long": ("'{name}' tem {value} linhas de código (limite {limit}).", "'{name}' has {value} lines of code (limit {limit}).",
+               "'{name}' tiene {value} líneas de código (límite {limit})."),
+    "f.long.sug": ("Divida o método em responsabilidades menores.", "Split the method into smaller responsibilities.",
+                   "Divida el método en responsabilidades más pequeñas."),
+    "f.params": ("'{name}' recebe {value} parâmetros (limite {limit}).", "'{name}' takes {value} parameters (limit {limit}).",
+                 "'{name}' recibe {value} parámetros (límite {limit})."),
+    "f.params.sug": ("Agrupe os parâmetros em um objeto/record (Parameter Object).", "Group the parameters into an object/record (Parameter Object).",
+                     "Agrupe los parámetros en un objeto/record (Parameter Object)."),
+    "f.dup": ("Bloco de {size} linhas duplicado em: {where}", "Block of {size} lines duplicated at: {where}", "Bloque de {size} líneas duplicado en: {where}"),
+    "f.dup.sug": ("Extraia o trecho comum para um método/classe reutilizável.", "Extract the common code into a reusable method/class.",
+                  "Extraiga el código común a un método/clase reutilizable."),
+    "f.notests": ("Nenhum arquivo de teste encontrado para {n} arquivos de código.", "No test files found for {n} source files.",
+                  "No se encontraron archivos de prueba para {n} archivos de código."),
+    "f.notests.sug": ("Crie um projeto de testes (xUnit/NUnit para C#, pytest para Python) começando pelas regras de negócio.",
+                      "Create a test project (xUnit/NUnit for C#, pytest for Python), starting with the business rules.",
+                      "Cree un proyecto de pruebas (xUnit/NUnit para C#, pytest para Python) empezando por las reglas de negocio."),
+    "f.fewtests": ("Proporção baixa de testes: {t} arquivos de teste para {s} de código ({ratio}).",
+                   "Low test ratio: {t} test files for {s} source files ({ratio}).",
+                   "Proporción baja de pruebas: {t} archivos de prueba para {s} de código ({ratio})."),
+    "f.fewtests.sug": ("Priorize testes nas classes mais complexas e nas regras de negócio.", "Prioritize tests for the most complex classes and business rules.",
+                       "Priorice pruebas en las clases más complejas y en las reglas de negocio."),
+    "f.untested": ("Arquivo com {lines} linhas sem teste correspondente (ex.: {stem}Tests / test_{stem}).",
+                   "File with {lines} lines and no matching test (e.g. {stem}Tests / test_{stem}).",
+                   "Archivo con {lines} líneas sin prueba correspondiente (ej.: {stem}Tests / test_{stem})."),
+    "f.untested.sug": ("Adicione testes unitários para este componente.", "Add unit tests for this component.", "Agregue pruebas unitarias para este componente."),
+    "f.untested.more": ("... e mais {n} arquivos sem teste correspondente.", "... and {n} more files without a matching test.",
+                        "... y {n} archivos más sin prueba correspondiente."),
+    "f.bigfile": ("Arquivo com {n} linhas (limite {limit}).", "File with {n} lines (limit {limit}).", "Archivo con {n} líneas (límite {limit})."),
+    "f.bigfile.sug": ("Divida em classes/módulos menores com uma única responsabilidade.", "Split into smaller single-responsibility classes/modules.",
+                      "Divida en clases/módulos más pequeños con una única responsabilidad."),
+    "f.capped": ("Regra '{rule}' ocorreu {n} vezes; exibindo as {max} primeiras.", "Rule '{rule}' matched {n} times; showing the first {max}.",
+                 "La regla '{rule}' apareció {n} veces; mostrando las primeras {max}."),
+    "f.vuln": ("{pkg}: {summary}", "{pkg}: {summary}", "{pkg}: {summary}"),
+    "f.vuln.default": ("vulnerabilidade conhecida", "known vulnerability", "vulnerabilidad conocida"),
+    "f.vuln.fix": ("Atualize para a versão {v} ou superior.", "Upgrade to version {v} or later.", "Actualice a la versión {v} o superior."),
+    "f.vuln.nofix": ("Avalie trocar ou atualizar o pacote.", "Consider replacing or upgrading the package.", "Evalúe reemplazar o actualizar el paquete."),
+    "f.also": ("também: {skill}", "also: {skill}", "también: {skill}"),
+    "f.see": ("Ver: {url}", "See: {url}", "Ver: {url}"),
+
+    # relatório
+    "r.title": ("Relatório de Code Review", "Code Review Report", "Informe de Code Review"),
+    "r.project": ("Projeto", "Project", "Proyecto"),
+    "r.date": ("Data", "Date", "Fecha"),
+    "r.duration": ("Duração", "Duration", "Duración"),
+    "r.languages": ("Linguagens", "Languages", "Lenguajes"),
+    "r.none_detected": ("nenhuma detectada", "none detected", "ninguno detectado"),
+    "r.score": ("Nota", "Score", "Nota"),
+    "r.grade": ("conceito", "grade", "calificación"),
+    "r.by_severity": ("Resumo por severidade", "Summary by severity", "Resumen por severidad"),
+    "r.severity": ("Severidade", "Severity", "Severidad"),
+    "r.findings": ("Achados", "Findings", "Hallazgos"),
+    "r.total": ("Total", "Total", "Total"),
+    "r.skills": ("Skills executadas", "Skills run", "Skills ejecutadas"),
+    "r.skill": ("Skill", "Skill", "Skill"),
+    "r.status": ("Situação", "Status", "Estado"),
+    "r.time": ("Tempo", "Time", "Tiempo"),
+    "r.note": ("Observação", "Note", "Observación"),
+    "r.priorities": ("Prioridades", "Priorities", "Prioridades"),
+    "r.priorities_intro": ("Os achados mais graves, para atacar primeiro:", "The most severe findings, to tackle first:",
+                           "Los hallazgos más graves, para atacar primero:"),
+    "r.by_file": ("Achados por arquivo", "Findings by file", "Hallazgos por archivo"),
+    "r.no_findings": ("Nenhum achado.", "No findings.", "Ningún hallazgo."),
+    "r.line": ("Linha", "Line", "Línea"),
+    "r.rule": ("Regra", "Rule", "Regla"),
+    "r.problem": ("Problema", "Problem", "Problema"),
+    "r.suggestion": ("Sugestão", "Suggestion", "Sugerencia"),
+    "r.location": ("Local", "Location", "Ubicación"),
+    "r.project_level": ("(projeto)", "(project)", "(proyecto)"),
+    "r.footer": ("Gerado pelo CodeReview Local {v}, 100% offline.", "Generated by CodeReview Local {v}, 100% offline.",
+                 "Generado por CodeReview Local {v}, 100% offline."),
+    "r.page": ("Página {n}", "Page {n}", "Página {n}"),
+    "r.file_prefix": ("CR", "CR", "CR"),
+    "r.tool_lang_note": ("Mensagens de ferramentas externas (Bandit, Ruff, Semgrep, Roslyn, OSV) são exibidas no idioma original.",
+                         "Messages from external tools (Bandit, Ruff, Semgrep, Roslyn, OSV) are shown in their original language.",
+                         "Los mensajes de herramientas externas (Bandit, Ruff, Semgrep, Roslyn, OSV) se muestran en su idioma original."),
+
+    # interface
+    "ui.subtitle": ("Code review 100% offline, sem IA. Escolha a pasta do projeto e clique em Analisar.",
+                    "100% offline code review, no AI. Pick the project folder and click Analyze.",
+                    "Code review 100% offline, sin IA. Elija la carpeta del proyecto y haga clic en Analizar."),
+    "ui.folder": ("Pasta do projeto:", "Project folder:", "Carpeta del proyecto:"),
+    "ui.browse": ("Procurar…", "Browse…", "Examinar…"),
+    "ui.analyze": ("Analisar", "Analyze", "Analizar"),
+    "ui.skills": ("Skills de CR", "CR skills", "Skills de CR"),
+    "ui.all": ("Todas", "All", "Todas"),
+    "ui.none": ("Nenhuma", "None", "Ninguna"),
+    "ui.report": ("Relatório", "Report", "Informe"),
+    "ui.save_to": ("Salvar em:", "Save to:", "Guardar en:"),
+    "ui.language": ("Idioma:", "Language:", "Idioma:"),
+    "ui.no_analysis": ("Nenhuma análise ainda.", "No analysis yet.", "Ningún análisis todavía."),
+    "ui.open_pdf": ("Abrir PDF", "Open PDF", "Abrir PDF"),
+    "ui.open_md": ("Abrir Markdown", "Open Markdown", "Abrir Markdown"),
+    "ui.open_dir": ("Abrir pasta", "Open folder", "Abrir carpeta"),
+    "ui.filter_all": ("Todas", "All", "Todas"),
+    "ui.ready": ("Pronto.", "Ready.", "Listo."),
+    "ui.analyzing": ("Analisando…", "Analyzing…", "Analizando…"),
+    "ui.running": ("Rodando: {name}", "Running: {name}", "Ejecutando: {name}"),
+    "ui.done": ("Concluído em {s}s", "Done in {s}s", "Terminado en {s}s"),
+    "ui.skipped": ("{n} skill(s) pulada(s)", "{n} skill(s) skipped", "{n} skill(s) omitida(s)"),
+    "ui.error": ("Erro.", "Error.", "Error."),
+    "ui.invalid_folder": ("Informe uma pasta de projeto válida.", "Please choose a valid project folder.", "Indique una carpeta de proyecto válida."),
+    "ui.no_skill": ("Marque pelo menos uma skill.", "Select at least one skill.", "Marque al menos una skill."),
+    "ui.pick_project": ("Escolha a pasta do projeto", "Choose the project folder", "Elija la carpeta del proyecto"),
+    "ui.pick_output": ("Onde salvar os relatórios", "Where to save the reports", "Dónde guardar los informes"),
+    "ui.suggestion": ("Sugestão", "Suggestion", "Sugerencia"),
+
+    # linha de comando
+    "cli.desc": ("Code review local e offline.", "Local, offline code review.", "Code review local y offline."),
+    "cli.folder_required": ("informe a pasta do projeto", "the project folder is required", "indique la carpeta del proyecto"),
+    "cli.found": ("{n} achado(s)", "{n} finding(s)", "{n} hallazgo(s)"),
+    "cli.report": ("Relatório: {path}", "Report: {path}", "Informe: {path}"),
+}
+
+_INDEX = {"pt": 0, "en": 1, "es": 2}
+
+
+def set_language(lang: str) -> None:
+    global _current
+    _current = lang if lang in _INDEX else DEFAULT
+
+
+def get_language() -> str:
+    return _current
+
+
+def t(key: str, **kw) -> str:
+    entry = _T.get(key)
+    text = entry[_INDEX[_current]] if entry else key
+    return text.format(**kw) if kw else text
+
+
+def pick(value, lang: str | None = None) -> str:
+    """Aceita texto simples ou dict {pt:..., en:..., es:...} (usado nas regras YAML)."""
+    if isinstance(value, dict):
+        lang = lang or _current
+        return value.get(lang) or value.get(DEFAULT) or next(iter(value.values()), "")
+    return value or ""

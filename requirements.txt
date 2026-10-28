@@ -1,0 +1,6 @@
+lizard>=1.17
+bandit>=1.7
+ruff>=0.5
+semgrep>=1.80
+PyYAML>=6.0
+reportlab>=4.0

@@ -32,7 +32,7 @@ jobs:
           "valor=$v" >> $env:GITHUB_OUTPUT
 
       - name: Dependências Python
-        run: pip install lizard bandit ruff PyYAML reportlab customtkinter pyinstaller
+        run: pip install lizard bandit ruff PyYAML reportlab customtkinter Pillow pyinstaller
 
       - name: Semgrep (opcional no Windows)
         continue-on-error: true

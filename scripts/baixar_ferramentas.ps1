@@ -4,6 +4,7 @@ $root = Split-Path -Parent $PSScriptRoot
 $tools = Join-Path $root "tools"
 New-Item -ItemType Directory -Force -Path $tools | Out-Null
 $headers = @{ "User-Agent" = "CodeReviewLocal" }
+if ($env:GITHUB_TOKEN) { $headers["Authorization"] = "Bearer $env:GITHUB_TOKEN" }  # evita limite da API no CI
 
 function Get-Asset($repo, $pattern) {
     $rel = Invoke-RestMethod -Headers $headers "https://api.github.com/repos/$repo/releases/latest"

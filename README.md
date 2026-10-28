@@ -37,29 +37,30 @@ A pesquisa que levou a essa seleção (popularidade, licença, suporte a Windows
 
 ## Instalação (Windows)
 
-Pré-requisitos: **Python 3.11+** e, para a skill de C#, o **.NET SDK**.
+1. Abra a página de [**Releases**](https://github.com/MateusKraiewski/CodeReview-App/releases/latest).
+2. Baixe o **`CodeReviewLocal-Setup-<versão>.exe`**.
+3. Execute e siga o assistente (não precisa ser administrador). Ele cria o atalho no menu Iniciar e, se você quiser, na área de trabalho.
+
+Pronto. O instalador já traz **tudo embutido**: Python, Gitleaks, OSV-Scanner, Ruff, Semgrep, Bandit, Lizard e as regras. Não é preciso instalar mais nada nem ter internet para analisar.
+
+> Opcional: a skill **Qualidade C# (Roslyn)** e o **DevSkim** usam o [.NET SDK](https://dotnet.microsoft.com/download) da máquina. Sem ele, essas duas skills são puladas com aviso e o resto funciona normalmente.
+
+Prefere não instalar? Baixe o **`CodeReviewLocal-<versão>-portatil.zip`**, extraia e execute `CodeReviewLocal.exe`.
+
+### Para desenvolvedores: rodar a partir do código
+
+Pré-requisito: Python 3.11+.
 
 ```bat
 git clone https://github.com/MateusKraiewski/CodeReview-App.git
 cd CodeReview-App
-build.bat
+py -3 -m venv .venv
+.venv\Scripts\pip install -r requirements.txt
+powershell -ExecutionPolicy Bypass -File scripts\baixar_ferramentas.ps1
+.venv\Scripts\pythonw CodeReviewLocal.pyw
 ```
 
-O `build.bat` (rode uma vez, com internet):
-
-1. cria um ambiente virtual e instala as dependências Python;
-2. baixa `gitleaks.exe`, `osv-scanner.exe`, `ruff.exe` e o DevSkim para a pasta `tools\` ([scripts/baixar_ferramentas.ps1](scripts/baixar_ferramentas.ps1));
-3. baixa as regras públicas do Semgrep para `rules\` ([scripts/baixar_regras.py](scripts/baixar_regras.py));
-4. gera o app em `dist\CodeReviewLocal\CodeReviewLocal.exe` com PyInstaller.
-
-Depois disso, copie a pasta `dist\CodeReviewLocal` para onde quiser. Ela funciona sem internet.
-
-### Rodar sem gerar o .exe
-
-```bat
-pip install -r requirements.txt
-pythonw CodeReviewLocal.pyw
-```
+O instalador é gerado automaticamente pelo GitHub Actions ([release.yml](.github/workflows/release.yml)) numa máquina Windows. Em todo PR, o .exe é compilado e testado contra o projeto de exemplo. Quando uma tag `v*` é criada, o instalador é publicado em Releases. Para gerar localmente, use `build.bat` e depois `iscc installer\CodeReviewLocal.iss`.
 
 ## Uso
 
@@ -140,6 +141,7 @@ crlocal/
   skills/           um arquivo por skill
   rules/            padroes.yaml e regras Semgrep próprias
 build/              spec do PyInstaller e ponto de entrada do .exe
+installer/          script do instalador (Inno Setup)
 scripts/            download das ferramentas e regras
 docs/               captura de tela, relatório de exemplo e pesquisa
 exemplos/           projeto com problemas propositais para testar
@@ -168,8 +170,7 @@ Código sob licença [MIT](LICENSE). Ferramentas usadas: Gitleaks (MIT), Semgrep
 
 **100% offline code review, no AI, no tokens.** Pick a project folder and the app runs several analysis skills (well-known open-source tools plus custom rules). It then produces a **PDF** and **Markdown** report with a 0–100 score, priorities and fix suggestions. The UI and the report are available in **Portuguese, English and Spanish**: pick the language in the top-right corner, or use `--lang en` on the command line.
 
-- Install: `build.bat` (needs Python 3.11+; the .NET SDK is needed for the C# skill). It downloads the tools once and builds `dist\CodeReviewLocal\CodeReviewLocal.exe`.
-- Run without building: `pip install -r requirements.txt` then `pythonw CodeReviewLocal.pyw`.
+- Install: download `CodeReviewLocal-Setup-<version>.exe` from [Releases](https://github.com/MateusKraiewski/CodeReview-App/releases/latest) and run it. Python and all tools are bundled. The .NET SDK is optional (only for the C# and DevSkim skills).
 - CLI: `python -m crlocal <folder> --saida <out-dir> --lang en`.
 - Team rules: `crlocal/rules/padroes.yaml`.
 - Contributing: fork + Pull Request only; the maintainer reviews and merges. See [CONTRIBUTING.md](CONTRIBUTING.md). License: MIT.
@@ -178,8 +179,7 @@ Código sob licença [MIT](LICENSE). Ferramentas usadas: Gitleaks (MIT), Semgrep
 
 **Code review 100% offline, sin IA y sin tokens.** Elija la carpeta de un proyecto y la aplicación ejecuta varias skills de análisis (herramientas open source reconocidas y reglas propias). Luego genera un informe en **PDF** y **Markdown** con nota de 0 a 100, prioridades y sugerencias. La interfaz y el informe están en **portugués, inglés y español**: elija el idioma arriba a la derecha, o use `--lang es` en la línea de comandos.
 
-- Instalación: `build.bat` (requiere Python 3.11+; el .NET SDK hace falta para la skill de C#).
-- Ejecutar sin compilar: `pip install -r requirements.txt` y `pythonw CodeReviewLocal.pyw`.
+- Instalación: descargue `CodeReviewLocal-Setup-<versión>.exe` desde [Releases](https://github.com/MateusKraiewski/CodeReview-App/releases/latest) y ejecútelo. Python y todas las herramientas vienen incluidos. El .NET SDK es opcional (solo para las skills de C# y DevSkim).
 - CLI: `python -m crlocal <carpeta> --saida <salida> --lang es`.
 - Reglas del equipo: `crlocal/rules/padroes.yaml`.
 - Contribuir: solo con fork + Pull Request; el mantenedor revisa y hace el merge. Ver [CONTRIBUTING.md](CONTRIBUTING.md). Licencia: MIT.

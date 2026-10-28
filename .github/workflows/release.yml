@@ -52,56 +52,8 @@ jobs:
           (Get-Content crlocal/__init__.py) -replace '__version__ = ".*"', '__version__ = "${{ steps.versao.outputs.valor }}"' | Set-Content crlocal/__init__.py
           Get-Content crlocal/__init__.py
 
-      - name: Diagnóstico do Semgrep fora do .exe
-        continue-on-error: true
-        timeout-minutes: 6
-        shell: pwsh
-        run: |
-          python -c "import semgrep; print('semgrep', semgrep.__version__)"
-          Get-ChildItem (python -c "import semgrep, os; print(os.path.join(os.path.dirname(semgrep.__file__), 'bin'))") -ErrorAction SilentlyContinue | ForEach-Object { "bin: $($_.Name) $($_.Length)" }
-          Set-Content sg.py "import sys`nsys.argv = ['semgrep', 'scan', '--json', '--metrics=off', '--disable-version-check', '--timeout', '30', '--config', sys.argv[1], 'exemplos/projeto-ruim']`nfrom semgrep.main import main`nmain()"
-          foreach ($cfg in "crlocal/rules/semgrep", "rules/semgrep") {
-            $t = [Diagnostics.Stopwatch]::StartNew()
-            $p = Start-Process python -ArgumentList "sg.py",$cfg -PassThru -NoNewWindow -RedirectStandardOutput "sg-out.json" -RedirectStandardError "sg-err.txt"
-            if (-not $p.WaitForExit(120000)) {
-              $filhos = (Get-CimInstance Win32_Process | Where-Object { $_.ParentProcessId -eq $p.Id } | ForEach-Object { $_.Name }) -join ","
-              Stop-Process -Id $p.Id -Force
-              Write-Output "::warning title=Semgrep::$cfg travou fora do .exe (filhos: $filhos) stderr: $((Get-Content sg-err.txt -Raw) -replace '\s+',' ' | Select-Object -First 1)"
-            } else {
-              $err = ((Get-Content sg-err.txt -Raw) -replace '\s+', ' ')
-              if ($err.Length -gt 300) { $err = $err.Substring($err.Length - 300) }
-              $out = (Get-Content sg-out.json -Raw) -replace '\s+', ' '
-              if ($out.Length -gt 400) { $out = $out.Substring(0, 400) }
-              Write-Output "::notice title=Semgrep::$cfg terminou em $([int]$t.Elapsed.TotalSeconds)s código $($p.ExitCode). stdout: $out stderr: $err"
-            }
-          }
-
       - name: Gerar o app com PyInstaller
         run: pyinstaller build/CodeReviewLocal.spec --noconfirm --distpath dist --workpath build/tmp
-
-      - name: Diagnóstico do Semgrep dentro do .exe
-        continue-on-error: true
-        timeout-minutes: 5
-        shell: pwsh
-        run: |
-          $cli = "dist/CodeReviewLocal/crlocal.exe"
-          Get-ChildItem dist/CodeReviewLocal/_internal/semgrep/bin -ErrorAction SilentlyContinue | ForEach-Object { "bin: $($_.Name) $($_.Length)" }
-          $casos = @(@("--run-tool","semgrep","--version"),
-                     @("--run-tool","semgrep","scan","--json","--metrics=off","--disable-version-check","--config","crlocal/rules/semgrep","exemplos/projeto-ruim"))
-          $i = 0
-          foreach ($a in $casos) {
-            $i++
-            $env:CRLOCAL_CHILD = "1"
-            $p = Start-Process $cli -ArgumentList $a -PassThru -NoNewWindow -RedirectStandardOutput "exe-out-$i.txt" -RedirectStandardError "exe-err-$i.txt"
-            $ok = $p.WaitForExit(90000)
-            $filhos = (Get-CimInstance Win32_Process | Where-Object { $_.ParentProcessId -eq $p.Id } | ForEach-Object { $_.Name }) -join ","
-            if (-not $ok) { Stop-Process -Id $p.Id -Force }
-            $err = (Get-Content "exe-err-$i.txt" -Raw) -replace '\s+', ' '
-            if ($err.Length -gt 600) { $err = $err.Substring($err.Length - 600) }
-            $out = (Get-Content "exe-out-$i.txt" -Raw) -replace '\s+', ' '
-            if ($out.Length -gt 200) { $out = $out.Substring(0, 200) }
-            Write-Output "::warning title=Semgrep no exe $i::terminou=$ok código=$($p.ExitCode) filhos=$filhos stdout=$out stderr=$err"
-          }
 
       - name: Testar o .exe gerado (uma skill por vez, com tempo limite)
         id: teste

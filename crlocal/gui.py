@@ -1,4 +1,4 @@
-"""Interface desktop (Tkinter): escolher pasta, marcar skills, analisar e abrir o relatório."""
+"""Interface desktop (CustomTkinter): escolher pasta, marcar skills, analisar e abrir o relatório."""
 from __future__ import annotations
 
 import json
@@ -11,10 +11,13 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
+import customtkinter as ctk
+
 from . import __version__
 from . import report as report_mod
+from . import updater
 from .i18n import LANGUAGES, get_language, set_language, t
-from .models import Report, Severity
+from .models import Finding, Report, Severity
 from .runner import run_review
 from .skills import all_skills
 
@@ -22,8 +25,23 @@ CONFIG_DIR = Path(os.environ.get("APPDATA") or Path.home() / ".config") / "CodeR
 CONFIG_FILE = CONFIG_DIR / "config.json"
 DEFAULT_OUT = Path.home() / "Documents" / "CodeReviewLocal"
 MAX_RECENT = 10
-SEV_TAGS = {Severity.CRITICA: "#7f1d1d", Severity.ALTA: "#dc2626", Severity.MEDIA: "#b45309",
-            Severity.BAIXA: "#1d4ed8", Severity.INFO: "#6b7280"}
+CATEGORIES = ["Segurança", "Qualidade", "Manutenibilidade", "Testes", "Padrões"]
+THEMES = ("system", "light", "dark")
+
+# cores (claro, escuro)
+ACCENT = ("#4f46e5", "#6366f1")
+ACCENT_HOVER = ("#4338ca", "#4f46e5")
+BG = ("#f4f5f9", "#0f1117")
+SURFACE = ("#ffffff", "#181b24")
+SURFACE_2 = ("#eef0f6", "#222633")
+BORDER = ("#e2e5ee", "#2a2f3d")
+TEXT = ("#111827", "#e8eaf0")
+MUTED = ("#6b7280", "#9aa1b2")
+SEV_COLORS = {Severity.CRITICA: ("#991b1b", "#f87171"), Severity.ALTA: ("#dc2626", "#fb7185"),
+              Severity.MEDIA: ("#d97706", "#fbbf24"), Severity.BAIXA: ("#2563eb", "#60a5fa"),
+              Severity.INFO: ("#6b7280", "#9ca3af")}
+GRADE_COLORS = {"A": "#16a34a", "B": "#65a30d", "C": "#d97706", "D": "#ea580c", "E": "#dc2626"}
+FONT = "Segoe UI"
 
 
 def load_config() -> dict:
@@ -48,22 +66,20 @@ def open_path(path: Path) -> None:
         subprocess.Popen(["open" if sys.platform == "darwin" else "xdg-open", str(path)])  # noqa: S603
 
 
-class App(tk.Tk):
-    def __init__(self) -> None:
-        super().__init__()
-        self.title(f"CodeReview Local {__version__}")
-        self.geometry("1200x780")
-        self.minsize(900, 600)
-        style = ttk.Style(self)
-        if "vista" in style.theme_names():
-            style.theme_use("vista")
-        style.configure("Title.TLabel", font=("Segoe UI", 16, "bold"))
-        style.configure("Score.TLabel", font=("Segoe UI", 20, "bold"))
-        style.configure("Accent.TButton", font=("Segoe UI", 10, "bold"))
+def pick(color: tuple[str, str]) -> str:
+    return color[1] if ctk.get_appearance_mode() == "Dark" else color[0]
 
+
+class App(ctk.CTk):
+    def __init__(self) -> None:
         self.cfg = load_config()
+        ctk.set_appearance_mode(self.cfg.get("theme", "system"))
+        super().__init__(fg_color=BG)
         set_language(self.cfg.get("lang", "pt"))
-        self.lang = tk.StringVar(value=LANGUAGES[get_language()])
+        self.title(f"CodeReview Local {__version__}")
+        self.geometry("1280x800")
+        self.minsize(1040, 640)
+
         self.skills = all_skills()
         enabled = set(self.cfg.get("skills", [s.id for s in self.skills]))
         self.skill_vars = {s.id: tk.BooleanVar(value=s.id in enabled) for s in self.skills}
@@ -71,128 +87,265 @@ class App(tk.Tk):
         self.fmt_pdf = tk.BooleanVar(value=self.cfg.get("pdf", True))
         self.project = tk.StringVar(value=(self.cfg.get("recent") or [""])[0])
         self.out_dir = tk.StringVar(value=self.cfg.get("out_dir", str(DEFAULT_OUT)))
-        self.sev_filter = tk.StringVar(value=t("ui.filter_all"))
+        self.sev_filter: Severity | None = None
         self.events: queue.Queue = queue.Queue()
         self.report: Report | None = None
         self.saved: list[Path] = []
+        self._rows: dict[str, Finding] = {}
+        self.container: ctk.CTkFrame | None = None
 
-        self.container: ttk.Frame | None = None
+        self.update_info: updater.Update | None = None
+        self.update_events: queue.Queue = queue.Queue()
+        self.check_updates = tk.BooleanVar(value=self.cfg.get("check_updates", True))
+
         self._build()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
+        if self.check_updates.get():
+            self.after(1500, self._check_updates)
 
     # ---------- layout ----------
+    def _font(self, size=13, weight="normal") -> ctk.CTkFont:
+        return ctk.CTkFont(family=FONT, size=size, weight=weight)
+
     def _build(self) -> None:
         if self.container:
             self.container.destroy()
-        root = self.container = ttk.Frame(self, padding=12)
-        root.pack(fill="both", expand=True)
-        top = ttk.Frame(root)
-        top.pack(fill="x")
-        ttk.Label(top, text="CodeReview Local", style="Title.TLabel").pack(side="left")
-        lang = ttk.Combobox(top, textvariable=self.lang, values=list(LANGUAGES.values()), state="readonly", width=11)
-        lang.pack(side="right")
-        lang.bind("<<ComboboxSelected>>", self._change_language)
-        ttk.Label(top, text="🌐 " + t("ui.language")).pack(side="right", padx=4)
-        ttk.Label(root, text=t("ui.subtitle"), foreground="#6b7280").pack(anchor="w", pady=(0, 8))
+        self.container = ctk.CTkFrame(self, fg_color="transparent")
+        self.container.pack(fill="both", expand=True)
+        self.container.grid_columnconfigure(1, weight=1)
+        self.container.grid_rowconfigure(0, weight=1)
+        self._build_sidebar(self.container).grid(row=0, column=0, sticky="nsw")
+        self._build_main(self.container).grid(row=0, column=1, sticky="nsew", padx=20, pady=20)
+        self._style_tree()
+        if self.report:
+            self._show_summary()
 
-        search = ttk.Frame(root)
-        search.pack(fill="x")
-        ttk.Label(search, text=t("ui.folder")).pack(side="left")
-        self.combo = ttk.Combobox(search, textvariable=self.project, values=self.cfg.get("recent", []))
-        self.combo.pack(side="left", fill="x", expand=True, padx=6)
+    def _build_sidebar(self, parent) -> ctk.CTkFrame:
+        side = ctk.CTkFrame(parent, width=360, corner_radius=0, fg_color=SURFACE, border_width=0)
+        side.grid_propagate(False)
+        side.grid_rowconfigure(2, weight=1)
+        side.grid_columnconfigure(0, weight=1)
+
+        head = ctk.CTkFrame(side, fg_color="transparent")
+        head.grid(row=0, column=0, sticky="ew", padx=20, pady=(22, 4))
+        ctk.CTkLabel(head, text="◆  CodeReview Local", font=self._font(19, "bold"), text_color=TEXT).pack(anchor="w")
+        ctk.CTkLabel(head, text=t("ui.subtitle"), font=self._font(12), text_color=MUTED,
+                     wraplength=310, justify="left").pack(anchor="w", pady=(4, 0))
+
+        bar = ctk.CTkFrame(side, fg_color="transparent")
+        bar.grid(row=1, column=0, sticky="ew", padx=20, pady=(14, 4))
+        ctk.CTkLabel(bar, text=t("ui.skills").upper(), font=self._font(11, "bold"), text_color=MUTED).pack(side="left")
+        ctk.CTkButton(bar, text=t("ui.none"), width=64, height=24, font=self._font(11), fg_color="transparent",
+                      text_color=MUTED, hover_color=SURFACE_2, command=lambda: self._set_all(False)).pack(side="right")
+        ctk.CTkButton(bar, text=t("ui.all"), width=56, height=24, font=self._font(11), fg_color="transparent",
+                      text_color=ACCENT, hover_color=SURFACE_2, command=lambda: self._set_all(True)).pack(side="right")
+
+        scroll = ctk.CTkScrollableFrame(side, fg_color="transparent")
+        scroll.grid(row=2, column=0, sticky="nsew", padx=10)
+        for cat in CATEGORIES:
+            items = [s for s in self.skills if s.category == cat]
+            if not items:
+                continue
+            ctk.CTkLabel(scroll, text=t(f"cat.{cat}"), font=self._font(12, "bold"),
+                         text_color=TEXT).pack(anchor="w", padx=10, pady=(12, 4))
+            for s in items:
+                sw = ctk.CTkSwitch(scroll, text=s.title, variable=self.skill_vars[s.id], font=self._font(12),
+                                   text_color=TEXT, progress_color=ACCENT, switch_width=34, switch_height=18)
+                sw.pack(anchor="w", padx=10, pady=3)
+                _Tooltip(sw, s.description)
+
+        cfg = ctk.CTkFrame(side, fg_color=SURFACE_2, corner_radius=12)
+        cfg.grid(row=3, column=0, sticky="ew", padx=16, pady=16)
+        cfg.grid_columnconfigure(1, weight=1)
+        ctk.CTkLabel(cfg, text=t("ui.report").upper(), font=self._font(11, "bold"),
+                     text_color=MUTED).grid(row=0, column=0, columnspan=2, sticky="w", padx=14, pady=(12, 4))
+        fm = ctk.CTkFrame(cfg, fg_color="transparent")
+        fm.grid(row=1, column=0, columnspan=2, sticky="w", padx=10)
+        for label, var in (("PDF", self.fmt_pdf), ("Markdown", self.fmt_md)):
+            ctk.CTkCheckBox(fm, text=label, variable=var, font=self._font(12), text_color=TEXT, fg_color=ACCENT,
+                            hover_color=ACCENT_HOVER, checkbox_width=18, checkbox_height=18,
+                            corner_radius=5).pack(side="left", padx=4)
+        out = ctk.CTkFrame(cfg, fg_color="transparent")
+        out.grid(row=2, column=0, columnspan=2, sticky="ew", padx=14, pady=(8, 4))
+        out.grid_columnconfigure(0, weight=1)
+        ctk.CTkEntry(out, textvariable=self.out_dir, height=30, font=self._font(11), fg_color=SURFACE,
+                     border_color=BORDER, text_color=TEXT).grid(row=0, column=0, sticky="ew")
+        ctk.CTkButton(out, text="…", width=32, height=30, fg_color=SURFACE, text_color=TEXT, border_width=1,
+                      border_color=BORDER, hover_color=BORDER, command=self.browse_out).grid(row=0, column=1, padx=(6, 0))
+
+        ctk.CTkLabel(cfg, text=t("ui.language"), font=self._font(12), text_color=MUTED).grid(
+            row=3, column=0, sticky="w", padx=14, pady=(10, 4))
+        lang = ctk.CTkOptionMenu(cfg, values=list(LANGUAGES.values()), command=self._change_language, height=28,
+                                 font=self._font(12), fg_color=SURFACE, button_color=BORDER, text_color=TEXT,
+                                 button_hover_color=ACCENT_HOVER)
+        lang.set(LANGUAGES[get_language()])
+        lang.grid(row=3, column=1, sticky="ew", padx=(0, 14), pady=(10, 4))
+        ctk.CTkLabel(cfg, text=t("ui.appearance"), font=self._font(12), text_color=MUTED).grid(
+            row=4, column=0, sticky="w", padx=14, pady=(4, 14))
+        self._theme_labels = {t(f"ui.theme.{k}"): k for k in THEMES}
+        theme = ctk.CTkSegmentedButton(cfg, values=list(self._theme_labels), command=self._change_theme,
+                                       font=self._font(11), selected_color=ACCENT, selected_hover_color=ACCENT_HOVER)
+        theme.set(t(f"ui.theme.{self.cfg.get('theme', 'system')}"))
+        theme.grid(row=4, column=1, sticky="ew", padx=(0, 14), pady=(4, 6))
+        ctk.CTkSwitch(cfg, text=t("upd.setting"), variable=self.check_updates, font=self._font(12), text_color=TEXT,
+                      progress_color=ACCENT, switch_width=34, switch_height=18, command=self._persist).grid(
+            row=5, column=0, columnspan=2, sticky="w", padx=14, pady=(6, 14))
+        ctk.CTkLabel(cfg, text=f"v{__version__}", font=self._font(11), text_color=MUTED).grid(
+            row=5, column=1, sticky="e", padx=14, pady=(6, 14))
+        return side
+
+    def _build_main(self, parent) -> ctk.CTkFrame:
+        main = ctk.CTkFrame(parent, fg_color="transparent")
+        main.grid_columnconfigure(0, weight=1)
+        main.grid_rowconfigure(3, weight=1)
+
+        # aviso de atualização (aparece só quando há versão nova)
+        self.banner = ctk.CTkFrame(main, fg_color=("#eef2ff", "#1e2140"), corner_radius=14, border_width=1,
+                                   border_color=ACCENT)
+        self.banner_lbl = ctk.CTkLabel(self.banner, text="", font=self._font(13, "bold"), text_color=TEXT)
+        self.banner_lbl.pack(side="left", padx=16, pady=10)
+        ctk.CTkButton(self.banner, text=t("upd.later"), width=80, height=30, font=self._font(12),
+                      fg_color="transparent", text_color=MUTED, hover_color=SURFACE_2,
+                      command=self.banner.grid_remove).pack(side="right", padx=(4, 12))
+        ctk.CTkButton(self.banner, text=t("upd.notes"), width=100, height=30, font=self._font(12), fg_color=SURFACE_2,
+                      text_color=TEXT, hover_color=BORDER,
+                      command=lambda: self._open_url(self.update_info.page_url)).pack(side="right", padx=4)
+        self.btn_update = ctk.CTkButton(self.banner, text="⬆  " + t("upd.install"), width=150, height=30,
+                                        font=self._font(12, "bold"), fg_color=ACCENT, hover_color=ACCENT_HOVER,
+                                        command=self._install_update)
+        self.btn_update.pack(side="right", padx=4)
+        if self.update_info:
+            self._show_update_banner()
+
+        # busca da pasta
+        search = ctk.CTkFrame(main, fg_color=SURFACE, corner_radius=14, border_width=1, border_color=BORDER)
+        search.grid(row=1, column=0, sticky="ew")
+        search.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(search, text=t("ui.folder"), font=self._font(12, "bold"), text_color=MUTED).grid(
+            row=0, column=0, columnspan=3, sticky="w", padx=16, pady=(12, 2))
+        self.combo = ctk.CTkComboBox(search, variable=self.project, values=self.cfg.get("recent", []) or [""],
+                                     height=40, font=self._font(13), fg_color=SURFACE_2, border_color=BORDER,
+                                     button_color=BORDER, text_color=TEXT, dropdown_font=self._font(12))
+        self.combo.grid(row=1, column=0, sticky="ew", padx=(16, 8), pady=(0, 14))
+        if not self.project.get():
+            self.combo.set("")
         self.combo.bind("<Return>", lambda _e: self.start())
-        ttk.Button(search, text=t("ui.browse"), command=self.browse).pack(side="left")
-        self.btn_run = ttk.Button(search, text=t("ui.analyze"), style="Accent.TButton", command=self.start)
-        self.btn_run.pack(side="left", padx=(6, 0))
+        ctk.CTkButton(search, text=t("ui.browse"), height=40, width=120, font=self._font(13), fg_color=SURFACE_2,
+                      text_color=TEXT, hover_color=BORDER, border_width=1, border_color=BORDER,
+                      command=self.browse).grid(row=1, column=1, padx=4, pady=(0, 14))
+        self.btn_run = ctk.CTkButton(search, text="▶  " + t("ui.analyze"), height=40, width=150,
+                                     font=self._font(14, "bold"), fg_color=ACCENT, hover_color=ACCENT_HOVER,
+                                     command=self.start)
+        self.btn_run.grid(row=1, column=2, padx=(4, 16), pady=(0, 14))
 
-        body = ttk.PanedWindow(root, orient="horizontal")
-        body.pack(fill="both", expand=True, pady=10)
-        body.add(self._build_left(body), weight=0)
-        body.add(self._build_right(body), weight=3)
-
-        bottom = ttk.Frame(root)
-        bottom.pack(fill="x")
-        self.progress = ttk.Progressbar(bottom, mode="determinate", maximum=len(self.skills))
-        self.progress.pack(side="left", fill="x", expand=True)
-        self.status = ttk.Label(bottom, text=t("ui.ready"), width=60)
-        self.status.pack(side="left", padx=8)
-
-    def _build_left(self, parent) -> ttk.Frame:
-        left = ttk.Frame(parent, padding=(0, 0, 8, 0), width=330)
-        box = ttk.LabelFrame(left, text=t("ui.skills"), padding=8)
-        box.pack(fill="both", expand=True)
-        for s in self.skills:
-            cb = ttk.Checkbutton(box, text=s.title, variable=self.skill_vars[s.id])
-            cb.pack(anchor="w", pady=1)
-            _Tooltip(cb, s.description)
-        row = ttk.Frame(box)
-        row.pack(anchor="w", pady=(6, 0))
-        ttk.Button(row, text=t("ui.all"), width=8, command=lambda: self._set_all(True)).pack(side="left")
-        ttk.Button(row, text=t("ui.none"), width=8, command=lambda: self._set_all(False)).pack(side="left", padx=4)
-
-        out = ttk.LabelFrame(left, text=t("ui.report"), padding=8)
-        out.pack(fill="x", pady=(8, 0))
-        ttk.Checkbutton(out, text="Markdown (.md)", variable=self.fmt_md).pack(anchor="w")
-        ttk.Checkbutton(out, text="PDF", variable=self.fmt_pdf).pack(anchor="w")
-        ttk.Label(out, text=t("ui.save_to")).pack(anchor="w", pady=(6, 0))
-        row = ttk.Frame(out)
-        row.pack(fill="x")
-        ttk.Entry(row, textvariable=self.out_dir).pack(side="left", fill="x", expand=True)
-        ttk.Button(row, text="…", width=3, command=self.browse_out).pack(side="left", padx=(4, 0))
-        return left
-
-    def _build_right(self, parent) -> ttk.Frame:
-        right = ttk.Frame(parent)
-        head = ttk.Frame(right)
-        head.pack(fill="x")
-        self.score_lbl = ttk.Label(head, text="–", style="Score.TLabel")
+        # resumo
+        cards = ctk.CTkFrame(main, fg_color="transparent")
+        cards.grid(row=2, column=0, sticky="ew", pady=16)
+        for i in range(6):
+            cards.grid_columnconfigure(i, weight=2 if i == 0 else 1, uniform="cards" if i else None)
+        score = ctk.CTkFrame(cards, fg_color=SURFACE, corner_radius=14, border_width=1, border_color=BORDER)
+        score.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
+        ctk.CTkLabel(score, text=t("ui.score").upper(), font=self._font(11, "bold"), text_color=MUTED).pack(
+            anchor="w", padx=16, pady=(12, 0))
+        row = ctk.CTkFrame(score, fg_color="transparent")
+        row.pack(anchor="w", padx=16, pady=(0, 12))
+        self.score_lbl = ctk.CTkLabel(row, text="–", font=self._font(36, "bold"), text_color=TEXT)
         self.score_lbl.pack(side="left")
-        self.summary_lbl = ttk.Label(head, text=t("ui.no_analysis"), foreground="#374151")
-        self.summary_lbl.pack(side="left", padx=12)
-        actions = ttk.Frame(right)
-        actions.pack(fill="x", pady=(6, 0))
-        self.btn_pdf = ttk.Button(actions, text=t("ui.open_pdf"), state="disabled", command=lambda: self._open_saved(".pdf"))
-        self.btn_md = ttk.Button(actions, text=t("ui.open_md"), state="disabled", command=lambda: self._open_saved(".md"))
-        self.btn_dir = ttk.Button(actions, text=t("ui.open_dir"), state="disabled",
-                                  command=lambda: open_path(Path(self.out_dir.get())))
-        for b in (self.btn_pdf, self.btn_md, self.btn_dir):
-            b.pack(side="left", padx=(0, 4))
+        self.grade_lbl = ctk.CTkLabel(row, text="", font=self._font(12, "bold"), text_color="white",
+                                      fg_color="transparent", corner_radius=8, height=26)
+        self.grade_lbl.pack(side="left", padx=12)
+        self.count_lbls: dict[Severity, ctk.CTkLabel] = {}
+        self.sev_cards: dict[Severity, ctk.CTkFrame] = {}
+        for i, sev in enumerate(sorted(Severity, reverse=True), 1):
+            card = ctk.CTkFrame(cards, fg_color=SURFACE, corner_radius=14, border_width=1, border_color=BORDER,
+                                cursor="hand2")
+            card.grid(row=0, column=i, sticky="nsew", padx=4)
+            dot = ctk.CTkLabel(card, text=f"●  {sev.label}", font=self._font(12, "bold"), text_color=SEV_COLORS[sev])
+            dot.pack(anchor="w", padx=14, pady=(12, 0))
+            n = ctk.CTkLabel(card, text="0", font=self._font(26, "bold"), text_color=TEXT)
+            n.pack(anchor="w", padx=14, pady=(0, 10))
+            for w in (card, dot, n):
+                w.bind("<Button-1>", lambda _e, s=sev: self._toggle_filter(s))
+            self.count_lbls[sev] = n
+            self.sev_cards[sev] = card
 
-        filt = ttk.Frame(right)
-        filt.pack(fill="x", pady=(8, 4))
-        ttk.Label(filt, text=t("r.severity") + ":").pack(side="left")
-        cb = ttk.Combobox(filt, textvariable=self.sev_filter, state="readonly", width=12,
-                          values=[t("ui.filter_all")] + [s.label for s in sorted(Severity, reverse=True)])
-        cb.pack(side="left", padx=4)
-        cb.bind("<<ComboboxSelected>>", lambda _e: self._fill_tree())
+        # lista de achados
+        panel = ctk.CTkFrame(main, fg_color=SURFACE, corner_radius=14, border_width=1, border_color=BORDER)
+        panel.grid(row=3, column=0, sticky="nsew")
+        panel.grid_columnconfigure(0, weight=1)
+        panel.grid_rowconfigure(1, weight=1)
+        top = ctk.CTkFrame(panel, fg_color="transparent")
+        top.grid(row=0, column=0, sticky="ew", padx=16, pady=(12, 6))
+        ctk.CTkLabel(top, text=t("ui.findings_title"), font=self._font(15, "bold"), text_color=TEXT).pack(side="left")
+        self.filter_lbl = ctk.CTkLabel(top, text="", font=self._font(12), text_color=MUTED)
+        self.filter_lbl.pack(side="left", padx=10)
+        self.btn_dir = self._action(top, "📁  " + t("ui.open_dir"), lambda: open_path(Path(self.out_dir.get())))
+        self.btn_md = self._action(top, "📝  " + t("ui.open_md"), lambda: self._open_saved(".md"))
+        self.btn_pdf = self._action(top, "📄  " + t("ui.open_pdf"), lambda: self._open_saved(".pdf"), accent=True)
 
+        holder = tk.Frame(panel, bd=0, highlightthickness=0, bg=pick(SURFACE))
+        holder.grid(row=1, column=0, sticky="nsew", padx=12)
+        self._tree_holder = holder
         cols = ("sev", "loc", "skill", "msg")
-        frame = ttk.Frame(right)
-        frame.pack(fill="both", expand=True)
-        self.tree = ttk.Treeview(frame, columns=cols, show="headings")
-        for c, title, w in zip(cols, (t("r.severity"), t("r.location"), t("r.skill"), t("r.problem")), (80, 260, 140, 520)):
-            self.tree.heading(c, text=title)
-            self.tree.column(c, width=w, stretch=(c == "msg"))
-        for sev, color in SEV_TAGS.items():
-            self.tree.tag_configure(sev.label, foreground=color)
-        sb = ttk.Scrollbar(frame, orient="vertical", command=self.tree.yview)
+        self.tree = ttk.Treeview(holder, columns=cols, show="headings", style="CR.Treeview")
+        for c, title, w in zip(cols, (t("r.severity"), t("r.location"), t("r.skill"), t("r.problem")),
+                               (110, 280, 150, 540)):
+            self.tree.heading(c, text=title, anchor="w")
+            self.tree.column(c, width=w, stretch=(c == "msg"), anchor="w")
+        sb = ctk.CTkScrollbar(holder, command=self.tree.yview)
         self.tree.configure(yscrollcommand=sb.set)
         self.tree.pack(side="left", fill="both", expand=True)
         sb.pack(side="left", fill="y")
         self.tree.bind("<<TreeviewSelect>>", self._show_detail)
+        self.empty_lbl = ctk.CTkLabel(holder, text=t("ui.empty"), font=self._font(13), text_color=MUTED,
+                                      fg_color=SURFACE)
+        self.empty_lbl.place(relx=0.5, rely=0.45, anchor="center")
 
-        self.detail = tk.Text(right, height=5, wrap="word", relief="flat", background="#f3f4f6")
-        self.detail.pack(fill="x", pady=(6, 0))
-        self.detail.configure(state="disabled")
-        if self.report:
-            self._show_summary()
-        return right
+        self.detail = ctk.CTkTextbox(panel, height=96, font=self._font(12), fg_color=SURFACE_2, text_color=TEXT,
+                                     corner_radius=10, wrap="word")
+        self.detail.grid(row=2, column=0, sticky="ew", padx=16, pady=12)
+        self._set_detail(t("ui.select_finding"))
+
+        bottom = ctk.CTkFrame(main, fg_color="transparent")
+        bottom.grid(row=4, column=0, sticky="ew", pady=(12, 0))
+        bottom.grid_columnconfigure(0, weight=1)
+        self.progress = ctk.CTkProgressBar(bottom, height=8, progress_color=ACCENT, fg_color=SURFACE_2)
+        self.progress.set(0)
+        self.progress.grid(row=0, column=0, sticky="ew")
+        self.status = ctk.CTkLabel(bottom, text=t("ui.ready"), font=self._font(12), text_color=MUTED, width=360,
+                                   anchor="e")
+        self.status.grid(row=0, column=1, padx=(12, 0))
+        return main
+
+    def _action(self, parent, text, command, accent=False) -> ctk.CTkButton:
+        b = ctk.CTkButton(parent, text=text, height=30, font=self._font(12), state="disabled", command=command,
+                          fg_color=ACCENT if accent else SURFACE_2, hover_color=ACCENT_HOVER if accent else BORDER,
+                          text_color=("white", "white") if accent else TEXT, text_color_disabled=MUTED)
+        b.pack(side="right", padx=(6, 0))
+        return b
+
+    def _style_tree(self) -> None:
+        style = ttk.Style(self)
+        style.theme_use("clam")
+        bg, fg, head, sel = pick(SURFACE), pick(TEXT), pick(SURFACE_2), pick(("#e0e7ff", "#2e3350"))
+        style.configure("CR.Treeview", background=bg, fieldbackground=bg, foreground=fg, rowheight=30,
+                        borderwidth=0, font=(FONT, 10))
+        style.configure("CR.Treeview.Heading", background=head, foreground=pick(MUTED), relief="flat",
+                        font=(FONT, 10, "bold"), padding=(8, 6))
+        style.map("CR.Treeview.Heading", background=[("active", head)])
+        style.map("CR.Treeview", background=[("selected", sel)], foreground=[("selected", fg)])
+        style.layout("CR.Treeview", [("CR.Treeview.treearea", {"sticky": "nswe"})])
+        for sev, color in SEV_COLORS.items():
+            self.tree.tag_configure(sev.name, foreground=pick(color))
+        self.tree.tag_configure("odd", background=pick(("#fafbfd", "#1c1f2a")))
+        self._tree_holder.configure(bg=bg)
 
     # ---------- ações ----------
     def browse(self) -> None:
         d = filedialog.askdirectory(title=t("ui.pick_project"), initialdir=self.project.get() or None)
         if d:
             self.project.set(d)
+            self.combo.set(d)
 
     def browse_out(self) -> None:
         d = filedialog.askdirectory(title=t("ui.pick_output"), initialdir=self.out_dir.get() or None)
@@ -204,7 +357,7 @@ class App(tk.Tk):
             v.set(value)
 
     def start(self) -> None:
-        project = self.project.get().strip().strip('"')
+        project = self.combo.get().strip().strip('"')
         if not project or not Path(project).is_dir():
             messagebox.showwarning("CodeReview Local", t("ui.invalid_folder"))
             return
@@ -212,11 +365,13 @@ class App(tk.Tk):
         if not chosen:
             messagebox.showwarning("CodeReview Local", t("ui.no_skill"))
             return
+        self.project.set(project)
         self._remember(project)
         self.btn_run.configure(state="disabled")
         for b in (self.btn_pdf, self.btn_md, self.btn_dir):
             b.configure(state="disabled")
-        self.progress.configure(value=0, maximum=len(chosen))
+        self._total, self._done = len(chosen), 0
+        self.progress.set(0)
         self.status.configure(text=t("ui.analyzing"))
         self.tree.delete(*self.tree.get_children())
         formats = [f for f, v in (("md", self.fmt_md), ("pdf", self.fmt_pdf)) if v.get()]
@@ -226,7 +381,7 @@ class App(tk.Tk):
 
     def _worker(self, project, skills, formats, out_dir) -> None:
         try:
-            rep = run_review(project, skills, progress=lambda t, r: self.events.put(("progress", t, r)))
+            rep = run_review(project, skills, progress=lambda title, r: self.events.put(("progress", title, r)))
             saved = report_mod.save(rep, out_dir, formats) if formats else []
             self.events.put(("done", rep, saved))
         except Exception as e:  # mostra qualquer falha na tela em vez de travar
@@ -240,7 +395,8 @@ class App(tk.Tk):
                     if b is None:
                         self.status.configure(text=t("ui.running", name=a))
                     else:
-                        self.progress.configure(value=min(self.progress["value"] + 1, self.progress["maximum"]))
+                        self._done += 1
+                        self.progress.set(self._done / max(self._total, 1))
                 elif kind == "done":
                     self._finish(a, b)
                     return
@@ -255,46 +411,61 @@ class App(tk.Tk):
 
     def _finish(self, rep: Report, saved: list[Path]) -> None:
         self.report, self.saved = rep, saved
-        self.progress.configure(value=self.progress.cget("maximum"))
-        self._show_summary()
+        self.progress.set(1)
         self.btn_run.configure(state="normal")
+        self._show_summary()
 
     def _show_summary(self) -> None:
         rep, saved = self.report, self.saved
         score = rep.score()
-        self.score_lbl.configure(text=f"{score}/100")
+        grade = report_mod.grade(score)
+        self.score_lbl.configure(text=f"{score}")
+        self.grade_lbl.configure(text=f"  {grade}  ", fg_color=GRADE_COLORS[grade[0]])
         counts = rep.counts()
-        self.summary_lbl.configure(text=f"{t('r.grade').capitalize()} {report_mod.grade(score)}   ·   " + "   ".join(
-            f"{s.label}: {counts[s]}" for s in sorted(Severity, reverse=True)))
+        for sev, lbl in self.count_lbls.items():
+            lbl.configure(text=str(counts[sev]))
         self._fill_tree()
         skipped = [r.title for r in rep.results if r.status != "ok"]
         self.status.configure(text=t("ui.done", s=rep.duration_s) + (f" · {t('ui.skipped', n=len(skipped))}" if skipped else ""))
-        if saved:
-            self.btn_dir.configure(state="normal")
-            if any(p.suffix == ".pdf" for p in saved):
-                self.btn_pdf.configure(state="normal")
-            if any(p.suffix == ".md" for p in saved):
-                self.btn_md.configure(state="normal")
+        self.btn_dir.configure(state="normal" if saved else "disabled")
+        self.btn_pdf.configure(state="normal" if any(p.suffix == ".pdf" for p in saved) else "disabled")
+        self.btn_md.configure(state="normal" if any(p.suffix == ".md" for p in saved) else "disabled")
+
+    def _toggle_filter(self, sev: Severity) -> None:
+        self.sev_filter = None if self.sev_filter == sev else sev
+        for s, card in self.sev_cards.items():
+            card.configure(border_color=SEV_COLORS[s] if s == self.sev_filter else BORDER,
+                           border_width=2 if s == self.sev_filter else 1)
+        self._fill_tree()
 
     def _fill_tree(self) -> None:
         self.tree.delete(*self.tree.get_children())
+        self._rows = {}
         if not self.report:
             return
-        want = self.sev_filter.get()
-        self._rows = {}
-        for f in sorted(self.report.findings, key=lambda x: (-x.severity, x.file, x.line)):
-            if want != t("ui.filter_all") and f.severity.label != want:
-                continue
+        rows = [f for f in sorted(self.report.findings, key=lambda x: (-x.severity, x.file, x.line))
+                if self.sev_filter is None or f.severity == self.sev_filter]
+        for i, f in enumerate(rows):
             loc = f"{f.file}:{f.line}" if f.file and f.line else (f.file or t("r.project_level"))
-            iid = self.tree.insert("", "end", values=(f.severity.label, loc, f.skill, f.message), tags=(f.severity.label,))
+            tags = (f.severity.name, "odd") if i % 2 else (f.severity.name,)
+            iid = self.tree.insert("", "end", values=(f"●  {f.severity.label}", loc, f.skill, f.message), tags=tags)
             self._rows[iid] = f
+        self.filter_lbl.configure(text=f"{len(rows)}" + (f" · {self.sev_filter.label}" if self.sev_filter else ""))
+        if rows:
+            self.empty_lbl.place_forget()
+        else:
+            self.empty_lbl.configure(text=t("r.no_findings") if self.report else t("ui.empty"))
+            self.empty_lbl.place(relx=0.5, rely=0.45, anchor="center")
 
     def _show_detail(self, _e=None) -> None:
         sel = self.tree.selection()
         if not sel:
             return
         f = self._rows[sel[0]]
-        text = f"[{f.severity.label}] {f.rule_id}  ({f.skill})\n{f.message}\n\n{t('ui.suggestion')}: {f.suggestion or '-'}"
+        self._set_detail(f"[{f.severity.label}]  {f.rule_id}   ·   {f.skill}\n{f.message}\n\n"
+                         f"💡 {t('ui.suggestion')}: {f.suggestion or '-'}")
+
+    def _set_detail(self, text: str) -> None:
         self.detail.configure(state="normal")
         self.detail.delete("1.0", "end")
         self.detail.insert("1.0", text)
@@ -305,15 +476,72 @@ class App(tk.Tk):
             if p.suffix == suffix:
                 open_path(p)
 
-    def _change_language(self, _e=None) -> None:
-        code = next(k for k, v in LANGUAGES.items() if v == self.lang.get())
+    # ---------- atualizações ----------
+    def _check_updates(self) -> None:
+        def worker():
+            info = updater.check()
+            if info:
+                self.update_events.put(info)
+        threading.Thread(target=worker, daemon=True).start()
+        self.after(300, self._poll_updates)
+
+    def _poll_updates(self, tries: int = 0) -> None:
+        try:
+            self.update_info = self.update_events.get_nowait()
+        except queue.Empty:
+            if tries < 40:  # a consulta tem timeout de 6s
+                self.after(300, self._poll_updates, tries + 1)
+            return
+        self._show_update_banner()
+
+    def _show_update_banner(self) -> None:
+        self.banner_lbl.configure(text=f"✨  {t('upd.available', v=self.update_info.version)}   "
+                                       f"·   {t('upd.current', v=__version__)}")
+        self.banner.grid(row=0, column=0, sticky="ew", pady=(0, 16))
+
+    def _install_update(self) -> None:
+        info = self.update_info
+        if not updater.can_self_update() or not info.setup_url:
+            self._open_url(info.page_url)
+            return
+        self.btn_update.configure(state="disabled")
+
+        def worker():
+            try:
+                setup = updater.download(info.setup_url, lambda f: self.after(
+                    0, lambda: self.status.configure(text=t("upd.downloading", p=int(f * 100)))))
+                self.after(0, lambda: self._run_installer(setup))
+            except OSError as e:
+                self.after(0, lambda: (self.btn_update.configure(state="normal"),
+                                       messagebox.showerror("CodeReview Local", t("upd.failed", e=e))))
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _run_installer(self, setup: Path) -> None:
+        self.status.configure(text=t("upd.installing"))
+        self._persist()
+        updater.run_installer(setup)
+        self.after(800, self.destroy)
+
+    @staticmethod
+    def _open_url(url: str) -> None:
+        import webbrowser
+
+        webbrowser.open(url)
+
+    def _change_language(self, label: str) -> None:
+        code = next(k for k, v in LANGUAGES.items() if v == label)
         if code == get_language():
             return
         set_language(code)
-        self.cfg["lang"] = code
-        self.sev_filter.set(t("ui.filter_all"))
         self._persist()
         self._build()  # a tela e a lista de achados são redesenhadas no novo idioma
+
+    def _change_theme(self, label: str) -> None:
+        mode = self._theme_labels[label]
+        self.cfg["theme"] = mode
+        ctk.set_appearance_mode(mode)
+        self._persist()
+        self.after(50, self._build)  # recolore a lista (ttk) para o novo tema
 
     def _remember(self, project: str) -> None:
         recent = [project] + [p for p in self.cfg.get("recent", []) if p != project]
@@ -322,7 +550,7 @@ class App(tk.Tk):
         self._persist()
 
     def _persist(self) -> None:
-        self.cfg.update(lang=get_language(), skills=[k for k, v in self.skill_vars.items() if v.get()],
+        self.cfg.update(lang=get_language(), check_updates=self.check_updates.get(), skills=[k for k, v in self.skill_vars.items() if v.get()],
                         md=self.fmt_md.get(), pdf=self.fmt_pdf.get(), out_dir=self.out_dir.get())
         save_config(self.cfg)
 
@@ -334,18 +562,18 @@ class App(tk.Tk):
 class _Tooltip:
     def __init__(self, widget, text: str) -> None:
         self.widget, self.text, self.tip = widget, text, None
-        widget.bind("<Enter>", self.show)
-        widget.bind("<Leave>", self.hide)
+        widget.bind("<Enter>", self.show, add="+")
+        widget.bind("<Leave>", self.hide, add="+")
 
     def show(self, _e=None) -> None:
         if self.tip or not self.text:
             return
-        x, y = self.widget.winfo_rootx() + 20, self.widget.winfo_rooty() + 22
+        x, y = self.widget.winfo_rootx() + 20, self.widget.winfo_rooty() + 26
         self.tip = tk.Toplevel(self.widget)
         self.tip.wm_overrideredirect(True)
         self.tip.wm_geometry(f"+{x}+{y}")
-        tk.Label(self.tip, text=self.text, background="#111827", foreground="white",
-                 padx=6, pady=3, wraplength=320, justify="left").pack()
+        tk.Label(self.tip, text=self.text, background="#111827", foreground="white", font=(FONT, 9),
+                 padx=8, pady=5, wraplength=320, justify="left").pack()
 
     def hide(self, _e=None) -> None:
         if self.tip:

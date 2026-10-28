@@ -14,10 +14,11 @@ Baixe o `CodeReviewLocal-Setup-<versão>.exe`, instale e abra pelo menu Iniciar.
 
 ## Recursos
 
-- **App desktop para Windows**: campo de busca da pasta com histórico de projetos recentes, seleção de skills, lista de achados com filtro por severidade e detalhes com sugestão.
+- **App desktop moderno para Windows**: tema escuro e claro (ou segue o Windows), campo de busca da pasta com projetos recentes, skills agrupadas por categoria, cards com nota e contagem por severidade (clique para filtrar) e detalhes com a sugestão de correção.
+- **Atualização automática**: quando sai uma versão nova, o app mostra um aviso com o botão **Atualizar agora**. Ele baixa o instalador, atualiza e reabre sozinho.
 - **Relatório em PDF e Markdown**: nota de 0 a 100 com conceito (A–E), resumo por severidade, skills executadas, top 10 prioridades e achados agrupados por arquivo. Veja o [exemplo em PDF](docs/relatorio-exemplo.pdf) ou [em Markdown](docs/relatorio-exemplo.md).
 - **3 idiomas**: português, inglês e espanhol, tanto na tela quanto no relatório.
-- **Offline de verdade**: o código analisado nunca sai da sua máquina, e nenhuma IA ou serviço externo é usado. A única conexão é o download da base de vulnerabilidades do OSV-Scanner na primeira análise; depois disso, tudo funciona sem internet.
+- **Offline de verdade**: o código analisado nunca sai da sua máquina, e nenhuma IA ou serviço externo é usado. As únicas conexões são a verificação de atualização (só consulta a versão publicada no GitHub e pode ser desligada) e o download da base de vulnerabilidades do OSV-Scanner na primeira análise com dependências.
 - **Tolerante a falhas**: se uma ferramenta não estiver instalada, a skill é marcada como "Pulada" no relatório e as outras continuam.
 - **Sem achados duplicados**: quando duas ferramentas apontam o mesmo problema na mesma linha (ex.: SQL injection no Semgrep e no Bandit), ele aparece uma vez só.
 
@@ -55,14 +56,24 @@ O instalador já traz **tudo embutido**: Python, Gitleaks, OSV-Scanner, Ruff, Se
 
 **Sem instalar (versão portátil):** baixe o `CodeReviewLocal-<versão>-portatil.zip`, extraia e execute `CodeReviewLocal.exe`.
 
+## Atualizações
+
+Ao abrir, o app consulta a [última Release](https://github.com/MateusKraiewski/CodeReview-App/releases/latest) do GitHub. Se houver versão nova, aparece um aviso no topo da tela:
+
+- **Atualizar agora**: baixa o `Setup.exe` da nova versão, instala em modo silencioso (as configurações e o histórico são mantidos) e reabre o app.
+- **Novidades**: abre a página da Release com o que mudou.
+- **Depois**: esconde o aviso até a próxima vez que o app abrir.
+
+A verificação não envia nenhum dado do seu projeto e pode ser desligada em **Verificar atualizações**, no painel lateral. Sem internet, o app simplesmente não mostra o aviso.
+
 ## Uso
 
 **App desktop**
 
-1. Escolha o idioma no canto superior direito.
+1. Escolha o idioma e o tema no painel lateral.
 2. Digite ou cole o caminho da pasta do projeto, ou clique em **Procurar…**. Os projetos recentes ficam na lista.
-3. Marque as skills (passe o mouse para ver a descrição) e os formatos do relatório.
-4. Clique em **Analisar**. Ao terminar, use **Abrir PDF**, **Abrir Markdown** ou **Abrir pasta**.
+3. Ligue ou desligue as skills (passe o mouse para ver a descrição) e escolha os formatos do relatório.
+4. Clique em **Analisar**. Clique num card de severidade para filtrar a lista e num achado para ver a sugestão. Ao terminar, use **Abrir PDF**, **Abrir Markdown** ou **Abrir pasta**.
 
 Os relatórios são salvos em `Documentos\CodeReviewLocal` (configurável na tela) com o nome `CR_<projeto>_<data>.pdf/.md`.
 
@@ -149,7 +160,11 @@ powershell -ExecutionPolicy Bypass -File scripts\baixar_ferramentas.ps1
 
 **Gerar o instalador localmente:** rode `build.bat` (gera `dist\CodeReviewLocal\`) e depois `iscc installer\CodeReviewLocal.iss` (requer o [Inno Setup 6](https://jrsoftware.org/isinfo.php)).
 
-**Como sai uma nova versão:** o workflow [release.yml](.github/workflows/release.yml) roda numa máquina Windows do GitHub. Em todo Pull Request ele compila o `.exe`, testa cada skill contra `exemplos/projeto-ruim`, gera o instalador e deixa o resultado para download em *Actions → Instalador Windows → Artifacts*. Ao criar uma tag `vX.Y.Z` na `main`, o instalador e o `.zip` portátil são publicados em **Releases**.
+**Como sai uma nova versão:** o workflow [release.yml](.github/workflows/release.yml) roda numa máquina Windows do GitHub. Em todo Pull Request ele compila o `.exe`, testa cada skill contra `exemplos/projeto-ruim`, gera o instalador e deixa o resultado para download em *Actions → Instalador Windows → Artifacts*. Ao criar uma tag `vX.Y.Z` na `main`, a versão é gravada no app e o instalador e o `.zip` portátil são publicados em **Releases**. A partir daí, todos os apps instalados mostram o aviso de atualização.
+
+```bash
+git tag v0.2.0 && git push origin v0.2.0
+```
 
 ### Problemas comuns
 
@@ -165,7 +180,8 @@ powershell -ExecutionPolicy Bypass -File scripts\baixar_ferramentas.ps1
 
 ```
 crlocal/
-  gui.py            app desktop (Tkinter)
+  gui.py            app desktop (CustomTkinter)
+  updater.py        verificação e instalação de atualizações (GitHub Releases)
   __main__.py       linha de comando
   runner.py         executa as skills em paralelo
   report.py         relatório Markdown e PDF (ReportLab)
@@ -207,6 +223,7 @@ Código sob licença [MIT](LICENSE). Ferramentas usadas: Gitleaks (MIT), Semgrep
 
 **100% offline code review, no AI, no tokens.** Pick a project folder and the app runs several analysis skills (well-known open-source tools plus custom rules). It then produces a **PDF** and **Markdown** report with a 0–100 score, priorities and fix suggestions. The UI and the report are available in **Portuguese, English and Spanish**: pick the language in the top-right corner, or use `--lang en` on the command line.
 
+- **Updates:** the app checks the latest GitHub Release on startup and offers **Update now**, which downloads, installs silently and restarts. You can turn it off in the sidebar.
 - **Install:** download `CodeReviewLocal-Setup-<version>.exe` from [Releases](https://github.com/MateusKraiewski/CodeReview-App/releases/latest) and run it. You don't need Python or admin rights, because all tools are bundled. If SmartScreen warns, click *More info → Run anyway* (the installer is not signed yet). The .NET SDK is optional and only needed for the C# and DevSkim skills.
 - **CLI:** `CodeReviewLocal.exe <folder> --saida <out-dir> --lang en`, or `python -m crlocal ...` from source.
 - Team rules: `crlocal/rules/padroes.yaml`.
@@ -216,6 +233,7 @@ Código sob licença [MIT](LICENSE). Ferramentas usadas: Gitleaks (MIT), Semgrep
 
 **Code review 100% offline, sin IA y sin tokens.** Elija la carpeta de un proyecto y la aplicación ejecuta varias skills de análisis (herramientas open source reconocidas y reglas propias). Luego genera un informe en **PDF** y **Markdown** con nota de 0 a 100, prioridades y sugerencias. La interfaz y el informe están en **portugués, inglés y español**: elija el idioma arriba a la derecha, o use `--lang es` en la línea de comandos.
 
+- **Actualizaciones:** al abrir, la aplicación consulta la última Release de GitHub y ofrece **Actualizar ahora**, que descarga, instala en silencio y reinicia. Se puede desactivar en el panel lateral.
 - **Instalación:** descargue `CodeReviewLocal-Setup-<versión>.exe` desde [Releases](https://github.com/MateusKraiewski/CodeReview-App/releases/latest) y ejecútelo. No necesita Python ni permisos de administrador, porque todas las herramientas vienen incluidas. Si SmartScreen avisa, haga clic en *Más información → Ejecutar de todas formas* (el instalador aún no está firmado). El .NET SDK es opcional y solo hace falta para las skills de C# y DevSkim.
 - **CLI:** `CodeReviewLocal.exe <carpeta> --saida <salida> --lang es`, o `python -m crlocal ...` desde el código.
 - Reglas del equipo: `crlocal/rules/padroes.yaml`.

@@ -32,7 +32,7 @@ jobs:
           "valor=$v" >> $env:GITHUB_OUTPUT
 
       - name: Dependências Python
-        run: pip install lizard bandit ruff PyYAML reportlab pyinstaller
+        run: pip install lizard bandit ruff PyYAML reportlab customtkinter pyinstaller
 
       - name: Semgrep (opcional no Windows)
         continue-on-error: true
@@ -45,6 +45,12 @@ jobs:
       - name: Baixar regras do Semgrep
         continue-on-error: true
         run: python scripts/baixar_regras.py
+
+      - name: Gravar a versão no app
+        shell: pwsh
+        run: |
+          (Get-Content crlocal/__init__.py) -replace '__version__ = ".*"', '__version__ = "${{ steps.versao.outputs.valor }}"' | Set-Content crlocal/__init__.py
+          Get-Content crlocal/__init__.py
 
       - name: Gerar o app com PyInstaller
         run: pyinstaller build/CodeReviewLocal.spec --noconfirm --distpath dist --workpath build/tmp

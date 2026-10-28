@@ -78,3 +78,36 @@ def test_relatorio_nos_tres_idiomas(lang, title, tmp_path):
     files = save(report, tmp_path)
     assert {p.suffix for p in files} == {".md", ".pdf"}
     assert all(p.stat().st_size > 500 for p in files)
+
+
+def test_comparacao_de_versoes():
+    from crlocal.updater import is_newer, parse_version
+
+    assert parse_version("v1.2.3") == (1, 2, 3)
+    assert parse_version("0.1.0-dev.7") == (0, 1, 0)
+    assert is_newer("v0.2.0", "0.1.9")
+    assert is_newer("1.0.0", "0.9.9")
+    assert not is_newer("v0.1.0", "0.1.0")
+    assert not is_newer("0.1.0", "0.2.0")
+
+
+def test_le_release_do_github():
+    from crlocal.updater import parse_release
+
+    data = {"tag_name": "v0.3.0", "html_url": "https://github.com/x/y/releases/tag/v0.3.0", "body": "notas",
+            "assets": [{"name": "CodeReviewLocal-0.3.0-portatil.zip", "browser_download_url": "zip"},
+                       {"name": "CodeReviewLocal-Setup-0.3.0.exe", "browser_download_url": "https://x/setup.exe"}]}
+    u = parse_release(data)
+    assert (u.version, u.setup_url, u.notes) == ("0.3.0", "https://x/setup.exe", "notas")
+
+
+def test_sem_internet_nao_quebra(monkeypatch):
+    import urllib.request
+
+    from crlocal import updater
+
+    def falha(*_a, **_k):
+        raise OSError("sem rede")
+
+    monkeypatch.setattr(urllib.request, "urlopen", falha)
+    assert updater.check() is None

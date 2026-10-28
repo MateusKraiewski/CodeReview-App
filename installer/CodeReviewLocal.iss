@@ -25,6 +25,8 @@ WizardStyle=modern
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 UninstallDisplayIcon={app}\CodeReviewLocal.exe
+CloseApplications=yes
+RestartApplications=no
 LicenseFile=..\LICENSE
 
 [Languages]
@@ -45,3 +47,5 @@ Name: "{autodesktop}\CodeReview Local"; Filename: "{app}\CodeReviewLocal.exe"; T
 
 [Run]
 Filename: "{app}\CodeReviewLocal.exe"; Description: "{cm:LaunchProgram,CodeReview Local}"; Flags: nowait postinstall skipifsilent
+; atualização automática (instalador rodando em /SILENT): reabre o app ao terminar
+Filename: "{app}\CodeReviewLocal.exe"; Flags: nowait; Check: WizardSilent

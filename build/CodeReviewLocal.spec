@@ -5,7 +5,7 @@ from PyInstaller.utils.hooks import collect_all
 
 root = os.path.abspath(os.path.join(SPECPATH, ".."))
 datas, binaries, hidden = [], [], ["lizard_languages", "lizard_ext"]
-for pkg in ("semgrep", "bandit", "stevedore", "lizard_ext", "lizard_languages", "reportlab", "yaml"):
+for pkg in ("semgrep", "bandit", "stevedore", "lizard_ext", "lizard_languages", "reportlab", "yaml", "customtkinter"):
     try:
         d, b, h = collect_all(pkg)
     except Exception as e:  # semgrep é opcional: se não instalou no Windows, o app pula a skill

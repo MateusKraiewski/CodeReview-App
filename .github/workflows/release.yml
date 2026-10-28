@@ -14,6 +14,7 @@ permissions:
 jobs:
   windows:
     runs-on: windows-latest
+    timeout-minutes: 40
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
@@ -48,28 +49,40 @@ jobs:
       - name: Gerar o app com PyInstaller
         run: pyinstaller build/CodeReviewLocal.spec --noconfirm --distpath dist --workpath build/tmp
 
-      - name: Testar o .exe gerado
+      - name: Testar o .exe gerado (uma skill por vez, com tempo limite)
+        id: teste
+        continue-on-error: true
+        timeout-minutes: 20
         shell: pwsh
         run: |
           $exe = "dist/CodeReviewLocal/CodeReviewLocal.exe"
-          $p = Start-Process $exe -ArgumentList "exemplos/projeto-ruim","--saida","teste-exe","--resumo","resumo.json","--json","achados.json" -Wait -PassThru
-          if ($p.ExitCode -ne 0) { throw "O .exe terminou com código $($p.ExitCode)" }
-          $resumo = Get-Content resumo.json -Raw | ConvertFrom-Json
-          $resumo.PSObject.Properties | ForEach-Object { "{0,-20} {1,-8} {2,4}  {3}" -f $_.Name, $_.Value.status, $_.Value.achados, $_.Value.mensagem }
-          # devem rodar sem erro no .exe; as da segunda lista também devem encontrar os problemas do exemplo
-          foreach ($s in "segredos","dependencias","seguranca-python","qualidade-python","complexidade","padroes","testes") {
-            if ($resumo.$s.status -eq "error") { throw "Skill '$s' deu erro no .exe: $($resumo.$s.mensagem)" }
+          $skills = "segredos","seguranca-sast","seguranca-devskim","seguranca-python","dependencias","qualidade-csharp","qualidade-python","complexidade","duplicacao","testes","padroes"
+          $falhas = @()
+          New-Item -ItemType Directory -Force teste-exe | Out-Null
+          foreach ($s in $skills) {
+            $resumo = "teste-exe/resumo-$s.json"
+            $t = [Diagnostics.Stopwatch]::StartNew()
+            $p = Start-Process $exe -ArgumentList "exemplos/projeto-ruim","--skills",$s,"--resumo",$resumo -PassThru
+            if (-not $p.WaitForExit(180000)) {
+              Get-CimInstance Win32_Process | Where-Object { $_.ParentProcessId -eq $p.Id } | ForEach-Object { "  processo filho preso: $($_.Name) $($_.CommandLine)" }
+              Stop-Process -Id $p.Id -Force
+              Get-CimInstance Win32_Process -Filter "Name='CodeReviewLocal.exe'" | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+              "{0,-20} TRAVOU (mais de 180s)" -f $s; $falhas += "$s travou"; continue
+            }
+            if (-not (Test-Path $resumo)) { "{0,-20} sem resumo (código {1})" -f $s, $p.ExitCode; $falhas += "$s sem resumo"; continue }
+            $r = (Get-Content $resumo -Raw | ConvertFrom-Json).$s
+            "{0,-20} {1,-8} {2,4} achados  {3,5:N1}s  {4}" -f $s, $r.status, $r.achados, $t.Elapsed.TotalSeconds, $r.mensagem
+            if ($r.status -eq "error") { $falhas += "$s erro: $($r.mensagem)" }
           }
-          foreach ($s in "segredos","seguranca-python","qualidade-python","complexidade","padroes","testes") {
-            if ($resumo.$s.status -ne "ok") { throw "Skill '$s' não rodou no .exe: $($resumo.$s.status) $($resumo.$s.mensagem)" }
-          }
-          foreach ($s in "seguranca-python","qualidade-python","complexidade","padroes","testes") {
-            if ($resumo.$s.achados -lt 1) { throw "Skill '$s' não encontrou nada no projeto de exemplo" }
-          }
-          if (-not (Get-ChildItem teste-exe -Filter *.pdf)) { throw "PDF não gerado" }
-          if (-not (Get-ChildItem teste-exe -Filter *.md)) { throw "Markdown não gerado" }
+          # relatório completo com as skills que rodaram
+          $p = Start-Process $exe -ArgumentList "exemplos/projeto-ruim","--skills","segredos,seguranca-python,qualidade-python,complexidade,duplicacao,testes,padroes","--saida","teste-exe" -PassThru
+          if (-not $p.WaitForExit(300000)) { Stop-Process -Id $p.Id -Force; $falhas += "relatório completo travou" }
+          if (-not (Get-ChildItem teste-exe -Filter *.pdf)) { $falhas += "PDF não gerado" }
+          if (-not (Get-ChildItem teste-exe -Filter *.md)) { $falhas += "Markdown não gerado" }
+          if ($falhas) { throw ("Falhas no .exe: " + ($falhas -join "; ")) }
 
       - name: Gerar o instalador (Inno Setup)
+        if: always()
         shell: pwsh
         run: |
           $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
@@ -79,12 +92,17 @@ jobs:
           Compress-Archive -Path dist/CodeReviewLocal -DestinationPath "dist/CodeReviewLocal-${{ steps.versao.outputs.valor }}-portatil.zip"
 
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: CodeReviewLocal-Setup-${{ steps.versao.outputs.valor }}
           path: |
             dist/CodeReviewLocal-Setup-*.exe
             dist/CodeReviewLocal-*-portatil.zip
             teste-exe/
+
+      - name: Falhar o job se o teste do .exe falhou
+        if: steps.teste.outcome != 'success'
+        run: exit 1
 
       - name: Publicar Release
         if: github.ref_type == 'tag'

@@ -69,8 +69,12 @@ def dispatch_tool(argv: list[str]) -> int | None:
     return result if isinstance(result, int) else 0
 
 
-def run(cmd: list[str], cwd: str | None = None, timeout: int = 900) -> subprocess.CompletedProcess:
-    env = dict(os.environ, PYTHONIOENCODING="utf-8", SEMGREP_SEND_METRICS="off")
+CHILD_ENV = "CRLOCAL_CHILD"
+
+
+def run(cmd: list[str], cwd: str | None = None, timeout: int = 300) -> subprocess.CompletedProcess:
+    # CHILD_ENV avisa o .exe chamado como ferramenta para nunca abrir a interface gráfica
+    env = dict(os.environ, PYTHONIOENCODING="utf-8", SEMGREP_SEND_METRICS="off", **{CHILD_ENV: "1"})
     return subprocess.run(
         cmd, cwd=cwd, capture_output=True, text=True, encoding="utf-8",
         errors="replace", timeout=timeout, env=env, creationflags=CREATE_NO_WINDOW,

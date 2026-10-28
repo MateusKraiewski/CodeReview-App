@@ -20,6 +20,8 @@ from . import __version__
 REPO = "MateusKraiewski/CodeReview-App"
 API_LATEST = f"https://api.github.com/repos/{REPO}/releases/latest"
 RELEASES_PAGE = f"https://github.com/{REPO}/releases/latest"
+# log do instalador na última atualização, para investigar quando ela falha
+LOG_FILE = Path(tempfile.gettempdir()) / "CodeReviewLocal-atualizacao.log"
 SETUP_ASSET = re.compile(r"^CodeReviewLocal-Setup-.*\.exe$", re.I)
 
 
@@ -87,6 +89,19 @@ def download(url: str, progress: Callable[[float], None] | None = None) -> Path:
 
 
 def run_installer(setup: Path) -> None:
-    """Executa o instalador em modo silencioso; ele fecha o app, atualiza e abre de novo."""
-    subprocess.Popen([str(setup), "/SILENT", "/SUPPRESSMSGBOXES", "/CLOSEAPPLICATIONS", "/NORESTART"],  # noqa: S603
-                     close_fds=True)
+    """Executa o instalador em modo silencioso; ele fecha o app, atualiza e abre de novo.
+
+    O instalador roda desacoplado do app, para sobreviver quando o app fechar, e força o fechamento
+    de quem ainda estiver usando os arquivos (sem isso ele desiste em silêncio e nada reabre).
+    """
+    args = [str(setup), "/SILENT", "/SUPPRESSMSGBOXES", "/CLOSEAPPLICATIONS", "/FORCECLOSEAPPLICATIONS",
+            "/NORESTART", f"/LOG={LOG_FILE}"]
+    flags = 0
+    if sys.platform == "win32":
+        flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+        try:
+            subprocess.Popen(args, close_fds=True, creationflags=flags | subprocess.CREATE_BREAKAWAY_FROM_JOB)  # noqa: S603
+            return
+        except OSError:  # o job do processo não permite sair dele; roda dentro mesmo
+            pass
+    subprocess.Popen(args, close_fds=True, creationflags=flags)  # noqa: S603

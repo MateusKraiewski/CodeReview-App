@@ -19,7 +19,7 @@ LIZARD_LANGS = {"Python", "C#", "JavaScript", "TypeScript", "Java", "Kotlin", "G
 
 
 def _analyze_files(files, extensions):
-    return list(lizard.analyze_files([str(p) for p in files], exts=lizard.get_extensions(extensions)))
+    return list(lizard.analyze_files((str(p) for p in files), exts=lizard.get_extensions(extensions)))
 
 
 class ComplexitySkill(Skill):
@@ -66,7 +66,7 @@ class DuplicationSkill(Skill):
 
     def analyze(self, root, languages):
         ext = DuplicateExtension()
-        files = [str(p) for p in iter_source_files(root)]
+        files = (str(p) for p in self.checked(iter_source_files(root)))  # duplicação compara com o projeto todo
         list(lizard.analyze_files(files, exts=lizard.get_extensions([ext])))
         findings = []
         for snippets in ext.get_duplicates(MIN_DUPLICATE_TOKENS):

@@ -26,7 +26,9 @@ class SemgrepSkill(Skill):
         rules_dir = app_dir() / "rules" / "semgrep"
         custom = app_dir() / "crlocal" / "rules" / "semgrep"
         paths = [str(rules_dir / d) for d in sorted(wanted) if (rules_dir / d).is_dir()]
-        paths += [str(f) for f in sorted(custom.glob("*.y*ml")) if f.stem in wanted] if custom.is_dir() else []
+        # nossas regras: python.yaml, csharp.yaml... só da linguagem presente; outros nomes sempre carregam
+        skip = set(RULE_DIRS.values()) - wanted
+        paths += [str(f) for f in sorted(custom.glob("*.y*ml")) if f.stem not in skip] if custom.is_dir() else []
         if not paths:
             raise SkillSkipped(t("skip.semgrep_rules"))
         return paths

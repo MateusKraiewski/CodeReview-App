@@ -184,6 +184,17 @@ Cada achado tem um peso: Crítica 10, Alta 5, Média 2, Baixa 0,5 e Info 0. A so
 
 **Regras de segurança próprias**: coloque arquivos Semgrep `.yaml` em [crlocal/rules/semgrep/](crlocal/rules/semgrep/). Use `metadata.message_en` / `message_es` para traduzir.
 
+**Deixar pastas de fora**: crie um arquivo `.crlocalignore` na pasta do projeto, no mesmo formato do `.gitignore` (um padrão por linha, `#` para comentário). Ele vale para a pasta onde está e as de baixo, então funciona mesmo quando você analisa uma pasta acima do projeto. Pastas de build e dependências (`bin`, `obj`, `build`, `dist`, `node_modules`, `.venv`...) já ficam de fora sem precisar do arquivo.
+
+```gitignore
+# a pasta exemplos, em qualquer nível
+exemplos/
+# com barra no meio: caminho a partir da pasta do arquivo
+docs/antigo/
+# arquivos pelo nome
+*.min.js
+```
+
 **Nova skill**: crie uma classe em `crlocal/skills/` herdando `Skill`, implemente `analyze(root, languages)` retornando `list[Finding]`, registre em `crlocal/skills/__init__.py` e adicione o título e a descrição em `crlocal/i18n.py` (`skill.<id>.title` / `skill.<id>.desc`).
 
 **Novo idioma**: adicione o código em `LANGUAGES` e uma coluna nas tuplas de `crlocal/i18n.py`.

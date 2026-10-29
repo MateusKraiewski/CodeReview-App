@@ -32,11 +32,12 @@ jobs:
           "valor=$v" >> $env:GITHUB_OUTPUT
 
       - name: Dependências Python
-        run: pip install lizard bandit ruff PyYAML reportlab customtkinter Pillow psutil pyinstaller
+        # mesmas versões mínimas do requirements.txt; o semgrep vem no passo seguinte, que pode falhar sem parar o build
+        run: pip install pyinstaller (Get-Content requirements.txt | Where-Object { $_ -and $_ -notmatch '^(#|semgrep)' })
 
       - name: Semgrep (opcional no Windows)
         continue-on-error: true
-        run: pip install semgrep
+        run: pip install -r requirements.txt
 
       - name: Baixar ferramentas (Gitleaks, OSV-Scanner, Ruff, DevSkim)
         shell: pwsh

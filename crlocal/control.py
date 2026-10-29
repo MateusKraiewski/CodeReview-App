@@ -5,7 +5,8 @@ externos que ela abre ficam registrados para poderem ser congelados (pausa) ou e
 """
 from __future__ import annotations
 
-import subprocess
+import contextlib
+import subprocess  # nosec B404 (roda as ferramentas de análise e o git)
 import threading
 
 try:
@@ -100,38 +101,31 @@ def _tree(proc: subprocess.Popen):
 
 def _signal(proc: subprocess.Popen, action: str) -> None:
     for p in _tree(proc):
-        try:
+        with contextlib.suppress(psutil.Error):
             getattr(p, action)()
-        except psutil.Error:
-            pass
 
 
 def _kill(proc: subprocess.Popen) -> None:
     tree = _tree(proc)
     for p in reversed(tree):  # filhos primeiro (ex.: semgrep-core aberto pelo semgrep)
-        try:
+        with contextlib.suppress(psutil.Error):
             p.kill()
-        except psutil.Error:
-            pass
     if not tree:
-        try:
+        with contextlib.suppress(OSError):
             proc.kill()
-        except OSError:
-            pass
 
 
 # controle ativo e skill da thread atual (cada skill roda na sua thread do runner)
-_active: RunControl | None = None
 _local = threading.local()
+_state: dict[str, RunControl | None] = {"active": None}
 
 
 def activate(control: RunControl | None) -> None:
-    global _active
-    _active = control
+    _state["active"] = control
 
 
 def active() -> RunControl | None:
-    return _active
+    return _state["active"]
 
 
 def current_skill() -> str | None:
@@ -143,5 +137,6 @@ def set_current_skill(skill_id: str | None) -> None:
 
 
 def checkpoint() -> None:
-    if _active is not None:
-        _active.checkpoint(current_skill())
+    ctl = _state["active"]
+    if ctl is not None:
+        ctl.checkpoint(current_skill())

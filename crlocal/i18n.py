@@ -3,9 +3,9 @@ from __future__ import annotations
 
 LANGUAGES = {"pt": "Português", "en": "English", "es": "Español"}
 DEFAULT = "pt"
-_current = DEFAULT
+_state = {"lang": DEFAULT}
 
-# chave: (pt, en, es)
+# cada chave tem o texto em pt, en e es
 _T: dict[str, tuple[str, str, str]] = {
     # severidades e conceitos
     "sev.CRITICA": ("Crítica", "Critical", "Crítica"),
@@ -62,9 +62,9 @@ _T: dict[str, tuple[str, str, str]] = {
                           "Project without tests and relevant files without a matching test.",
                           "Proyecto sin pruebas y archivos relevantes sin prueba correspondiente."),
     "skill.padroes.title": ("Nomenclatura e padrões do time", "Naming and team conventions", "Nomenclatura y convenciones del equipo"),
-    "skill.padroes.desc": ("Regras configuráveis em YAML: nomes, logs esquecidos, catch vazio, TODO/FIXME, arquivos grandes.",
-                           "Configurable YAML rules: names, leftover logs, empty catch, TODO/FIXME, large files.",
-                           "Reglas configurables en YAML: nombres, logs olvidados, catch vacío, TODO/FIXME, archivos grandes."),
+    "skill.padroes.desc": ("Regras configuráveis em YAML: nomes, logs esquecidos, catch vazio, TODO/FIXME, arquivos grandes.",  # DevSkim: ignore DS176209
+                           "Configurable YAML rules: names, leftover logs, empty catch, TODO/FIXME, large files.",  # DevSkim: ignore DS176209
+                           "Reglas configurables en YAML: nombres, logs olvidados, catch vacío, TODO/FIXME, archivos grandes."),  # DevSkim: ignore DS176209
 
     # mensagens das skills
     "skip.no_lang": ("Nenhuma linguagem compatível no projeto.", "No compatible language in the project.", "Ningún lenguaje compatible en el proyecto."),
@@ -285,23 +285,22 @@ _INDEX = {"pt": 0, "en": 1, "es": 2}
 
 
 def set_language(lang: str) -> None:
-    global _current
-    _current = lang if lang in _INDEX else DEFAULT
+    _state["lang"] = lang if lang in _INDEX else DEFAULT
 
 
 def get_language() -> str:
-    return _current
+    return _state["lang"]
 
 
 def t(key: str, **kw) -> str:
     entry = _T.get(key)
-    text = entry[_INDEX[_current]] if entry else key
+    text = entry[_INDEX[_state["lang"]]] if entry else key
     return text.format(**kw) if kw else text
 
 
 def pick(value, lang: str | None = None) -> str:
     """Aceita texto simples ou dict {pt:..., en:..., es:...} (usado nas regras YAML)."""
     if isinstance(value, dict):
-        lang = lang or _current
+        lang = lang or _state["lang"]
         return value.get(lang) or value.get(DEFAULT) or next(iter(value.values()), "")
     return value or ""

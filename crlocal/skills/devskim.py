@@ -19,7 +19,7 @@ class DevSkimSkill(Skill):
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp) / "devskim.sarif"
             proc = run([*exe, "analyze", "-I", str(root), "-O", str(out), "-f", "sarif",
-                        "--ignore-globs", "**/bin/**,**/obj/**,**/node_modules/**,**/.git/**"])
+                        "--ignore-globs", ",".join(self.ignore.exclude_globs() if self.ignore else ["**/.git/**"])])
             if not out.exists():
                 raise RuntimeError(proc.stderr.strip()[-400:] or t("err.no_output", tool="devskim"))
             return parse_sarif(out.read_text(encoding="utf-8"), self, root)

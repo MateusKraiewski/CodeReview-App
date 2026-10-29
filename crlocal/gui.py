@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import os
 import queue
-import subprocess
+import subprocess  # nosec B404 (roda as ferramentas de análise e o git)
 import sys
 import threading
 import time
@@ -32,7 +32,7 @@ MAX_RECENT = 10
 CATEGORIES = ["Segurança", "Qualidade", "Manutenibilidade", "Testes", "Padrões"]
 THEMES = ("system", "light", "dark")
 
-# cores (claro, escuro)
+# cores: tema claro e tema escuro
 ACCENT = ("#4f46e5", "#6366f1")
 ACCENT_HOVER = ("#4338ca", "#4f46e5")
 BG = ("#f4f5f9", "#0f1117")
@@ -69,9 +69,9 @@ def save_config(cfg: dict) -> None:
 
 def open_path(path: Path) -> None:
     if sys.platform == "win32":
-        os.startfile(path)  # noqa: S606
+        os.startfile(path)  # nosec B606
     else:
-        subprocess.Popen(["open" if sys.platform == "darwin" else "xdg-open", str(path)])  # noqa: S603
+        subprocess.Popen(["open" if sys.platform == "darwin" else "xdg-open", str(path)])  # nosec B603 B607
 
 
 def pick(color: tuple[str, str]) -> str:
@@ -134,7 +134,7 @@ class App(ctk.CTk):
 
     def _logo_image(self):
         try:
-            from PIL import Image
+            from PIL import Image  # noqa: PLC0415 (só carrega se houver imagem)
 
             return ctk.CTkImage(Image.open(ASSETS / "icone-64.png"), size=(28, 28))
         except Exception:  # sem Pillow/ImageTk: usa a versão em 32 px direto no Tk
@@ -310,7 +310,7 @@ class App(ctk.CTk):
             anchor="w", padx=16, pady=(12, 0))
         row = ctk.CTkFrame(score, fg_color="transparent")
         row.pack(anchor="w", padx=16, pady=(0, 12))
-        self.score_lbl = ctk.CTkLabel(row, text="–", font=self._font(36, "bold"), text_color=TEXT)
+        self.score_lbl = ctk.CTkLabel(row, text="—", font=self._font(36, "bold"), text_color=TEXT)
         self.score_lbl.pack(side="left")
         self.grade_lbl = ctk.CTkLabel(row, text="", font=self._font(12, "bold"), text_color="white",
                                       fg_color="transparent", corner_radius=8, height=26)
@@ -350,7 +350,7 @@ class App(ctk.CTk):
         cols = ("sev", "loc", "skill", "msg")
         self.tree = ttk.Treeview(holder, columns=cols, show="headings", style="CR.Treeview")
         for c, title, w in zip(cols, (t("r.severity"), t("r.location"), t("r.skill"), t("r.problem")),
-                               (110, 280, 150, 540)):
+                               (110, 280, 150, 540), strict=True):
             self.tree.heading(c, text=title, anchor="w")
             self.tree.column(c, width=w, stretch=(c == "msg"), anchor="w")
         sb = ctk.CTkScrollbar(holder, command=self.tree.yview)
@@ -588,7 +588,7 @@ class App(ctk.CTk):
         if state.status == "ok":
             return f"✓ {len(state.findings)}", OK_COLOR, SURFACE_2
         if state.status == "skipped":
-            return "–", MUTED, SURFACE_2
+            return "—", MUTED, SURFACE_2
         return "✗", ERR_COLOR, SURFACE_2
 
     def _render_chips(self) -> None:
@@ -644,7 +644,7 @@ class App(ctk.CTk):
         self.after(250, self._tick)
 
     def _show_live(self) -> None:
-        counts = {s: 0 for s in Severity}
+        counts = dict.fromkeys(Severity, 0)
         for f in self.live:
             counts[f.severity] += 1
         for sev, lbl in self.count_lbls.items():
@@ -750,7 +750,7 @@ class App(ctk.CTk):
                 setup = updater.download(info.setup_url, lambda f: self.after(
                     0, lambda: self.status.configure(text=t("upd.downloading", p=int(f * 100)))))
                 self.after(0, lambda: self._run_installer(setup))
-            except OSError as e:
+            except (OSError, ValueError) as e:
                 self.after(0, lambda err=e: (self.btn_update.configure(state="normal"),
                                              messagebox.showerror("CodeReview Local", t("upd.failed", e=err))))
         threading.Thread(target=worker, daemon=True).start()
@@ -766,7 +766,7 @@ class App(ctk.CTk):
 
     @staticmethod
     def _open_url(url: str) -> None:
-        import webbrowser
+        import webbrowser  # noqa: PLC0415
 
         webbrowser.open(url)
 

@@ -180,8 +180,8 @@ def serve(stdin=None, stdout=None) -> int:
     ensure_std_streams()
     stdin = stdin or sys.stdin
     stdout = stdout or sys.stdout
-    for line in stdin:
-        line = line.strip()
+    for raw in stdin:
+        line = raw.strip()
         if not line:
             continue
         try:

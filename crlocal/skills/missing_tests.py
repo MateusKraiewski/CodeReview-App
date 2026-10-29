@@ -20,8 +20,7 @@ MAX_LISTED = 25
 def _stem(name: str) -> str:
     s = Path(name).stem.lower()
     s = re.sub(r"\.(spec|test)$", "", s)
-    s = re.sub(r"(^test_|_test$|tests?$)", "", s)
-    return s
+    return re.sub(r"(^test_|_test$|tests?$)", "", s)
 
 
 class MissingTestsSkill(Skill):

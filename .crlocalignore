@@ -1,0 +1,7 @@
+# O que o CodeReview Local deixa de fora ao analisar este repositório (mesmo formato do .gitignore).
+
+# projeto de exemplo com erros de propósito, usado nos testes e na demonstração
+exemplos/
+
+# regras de análise: são textos que descrevem os problemas (MD5, TODO...), não código que os comete
+crlocal/rules/

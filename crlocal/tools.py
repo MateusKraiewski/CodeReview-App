@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import os
 import shutil
-import subprocess
+import subprocess  # nosec B404 (roda as ferramentas de análise e o git)
 import sys
 from pathlib import Path
 
@@ -62,7 +62,7 @@ def dispatch_tool(argv: list[str]) -> int | None:
     """Se o processo foi iniciado com --run-tool, executa a ferramenta e devolve o código de saída."""
     if len(argv) < 3 or argv[1] != "--run-tool" or argv[2] not in PY_TOOLS:
         return None
-    import importlib
+    import importlib  # noqa: PLC0415
 
     module, func = PY_TOOLS[argv[2]]
     ensure_std_streams()
@@ -80,7 +80,7 @@ CHILD_ENV = "CRLOCAL_CHILD"
 def run(cmd: list[str], cwd: str | None = None, timeout: int = 300) -> subprocess.CompletedProcess:
     # CHILD_ENV avisa o .exe chamado como ferramenta para nunca abrir a interface gráfica
     env = dict(os.environ, PYTHONIOENCODING="utf-8", PYTHONUTF8="1", SEMGREP_SEND_METRICS="off", **{CHILD_ENV: "1"})
-    proc = subprocess.Popen(
+    proc = subprocess.Popen(  # nosec B603 (lista de argumentos, sem shell)
         cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.DEVNULL, text=True,
         encoding="utf-8", errors="replace", env=env, creationflags=CREATE_NO_WINDOW,
     )

@@ -7,6 +7,7 @@ from pathlib import Path
 from .. import control
 from ..detect import iter_source_files, rel
 from ..i18n import t
+from ..ignore import IgnoreRules, load as load_ignore
 from ..models import Finding, Severity, SkillResult
 
 
@@ -19,6 +20,7 @@ class Skill:
     category: str = ""
     languages: set[str] | None = None  # None = qualquer linguagem
     targets: list[Path] | None = None  # arquivos a analisar no modo "só alterações" (None = projeto inteiro)
+    ignore: IgnoreRules | None = None  # pastas de build e padrões do .crlocalignore
     MAX_TARGETS = 150  # acima disso a ferramenta analisa a pasta toda (limite de linha de comando do Windows)
 
     @property
@@ -51,8 +53,10 @@ class Skill:
             return [str(p) for p in self.targets]
         return [str(root)]
 
-    def execute(self, root: Path, languages: dict[str, int], targets: list[Path] | None = None) -> SkillResult:
+    def execute(self, root: Path, languages: dict[str, int], targets: list[Path] | None = None,
+                ignore: IgnoreRules | None = None) -> SkillResult:
         self.targets = targets
+        self.ignore = ignore if ignore is not None else load_ignore(root)
         control.set_current_skill(self.id)
         ctl = control.active()
         start = time.perf_counter()
@@ -61,7 +65,8 @@ class Skill:
             control.checkpoint()  # espera a pausa / respeita "pular" antes de começar
             if not self.applies_to(languages):
                 raise SkillSkipped(t("skip.no_lang"))
-            result.findings = self.analyze(root, languages)
+            # ferramentas que varrem a pasta toda: o que caiu em pasta ignorada sai do resultado
+            result.findings = [f for f in self.analyze(root, languages) if not f.file or not self.ignore.ignored(f.file)]
             control.checkpoint()
         except control.Cancelled:
             result.status, result.findings = "skipped", []

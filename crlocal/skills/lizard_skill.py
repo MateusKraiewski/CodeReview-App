@@ -69,8 +69,8 @@ class DuplicationSkill(Skill):
         files = (str(p) for p in self.checked(iter_source_files(root)))  # duplicação compara com o projeto todo
         list(lizard.analyze_files(files, exts=lizard.get_extensions([ext])))
         findings = []
-        for snippets in ext.get_duplicates(MIN_DUPLICATE_TOKENS):
-            snippets = list(snippets)
+        for group in ext.get_duplicates(MIN_DUPLICATE_TOKENS):
+            snippets = list(group)
             first, others = snippets[0], snippets[1:]
             where = ", ".join(f"{rel(s.file_name, root)}:{s.start_line}-{s.end_line}" for s in others)
             size = first.end_line - first.start_line + 1

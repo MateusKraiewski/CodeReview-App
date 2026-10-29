@@ -12,7 +12,7 @@ TOPICS = {
     "desserializacao": r"pickle|binaryformatter|deserializ|desserializ",
     "eval": r"\beval\b|exec\(",
     "segredo": r"password|senha|secret|segredo|token|api.?key|credential",
-    "hash-fraco": r"md5|sha1|hash fraco|weak hash",
+    "hash-fraco": r"md5|sha1|hash fraco|weak hash",  # DevSkim: ignore DS126858 (é o texto procurado, não um hash)
     "excecao": r"except|catch|exce[cç]",
     "tls": r"certific|verify=false|tls|ssl",
 }
@@ -31,7 +31,12 @@ def _topic(f: Finding) -> str | None:
 def merge_duplicates(findings: list[Finding]) -> list[Finding]:
     kept: dict[tuple, Finding] = {}
     out: list[Finding] = []
+    seen: set[tuple] = set()
     for f in sorted(findings, key=lambda x: -x.severity):
+        exact = (f.skill, f.rule_id, f.file, f.line, f.message)
+        if exact in seen:  # a ferramenta achou o mesmo problema duas vezes na linha (ex.: MD5 e md5)
+            continue
+        seen.add(exact)
         topic = _topic(f)
         if not f.file or not topic or f.category not in MERGEABLE:
             out.append(f)

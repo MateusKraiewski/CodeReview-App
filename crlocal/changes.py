@@ -6,7 +6,7 @@ de linguagens que não foram tocadas são puladas.
 from __future__ import annotations
 
 import shutil
-import subprocess
+import subprocess  # nosec B404 (roda as ferramentas de análise e o git)
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -44,8 +44,8 @@ def _git(root: Path, *args: str) -> str:
     if not git:
         raise ChangesError(t("chg.no_git"))
     flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if sys.platform == "win32" else 0
-    proc = subprocess.run([git, "-C", str(root), *args], capture_output=True, text=True, encoding="utf-8",
-                          errors="replace", stdin=subprocess.DEVNULL, creationflags=flags, timeout=60)
+    proc = subprocess.run([git, "-C", str(root), *args], capture_output=True, text=True, encoding="utf-8",  # nosec B603
+                          errors="replace", stdin=subprocess.DEVNULL, creationflags=flags, timeout=60, check=False)
     if proc.returncode != 0:
         raise ChangesError(proc.stderr.strip().splitlines()[-1] if proc.stderr.strip() else f"git {args[0]}")
     return proc.stdout

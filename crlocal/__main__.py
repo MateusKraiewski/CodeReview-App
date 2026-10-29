@@ -15,7 +15,7 @@ from .skills import all_skills
 
 def main(argv=None) -> int:
     if "--mcp" in (argv if argv is not None else sys.argv[1:]):
-        from .mcp_server import serve
+        from .mcp_server import serve  # noqa: PLC0415 (o servidor MCP não precisa do resto)
 
         return serve()
     pre = argparse.ArgumentParser(add_help=False)
@@ -51,7 +51,7 @@ def main(argv=None) -> int:
         skills = [s for s in skills if s.id in wanted]
 
     def progress(title, r):
-        status = "✔" if r and r.status == "ok" else "•" if r is None else "–"
+        status = "✔" if r and r.status == "ok" else "•" if r is None else "—"
         detail = f": {t('cli.found', n=len(r.findings))}" if r and r.status == "ok" else f": {r.message}" if r else ""
         print(f"  {status} {title}{detail}", file=sys.stderr)
 

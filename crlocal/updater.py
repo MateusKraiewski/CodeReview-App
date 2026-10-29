@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import json
 import re
-import subprocess
+import subprocess  # nosec B404 (roda as ferramentas de análise e o git)
 import sys
 import tempfile
 import urllib.request
@@ -62,7 +62,7 @@ def check(timeout: float = 6.0) -> Update | None:
     req = urllib.request.Request(API_LATEST, headers={"User-Agent": f"CodeReviewLocal/{__version__}",
                                                       "Accept": "application/vnd.github+json"})
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310 (URL fixa https)
+        with urllib.request.urlopen(req, timeout=timeout) as resp:  # nosec B310 (URL fixa https)
             update = parse_release(json.load(resp))
     except (OSError, ValueError):
         return None
@@ -75,9 +75,11 @@ def can_self_update() -> bool:
 
 
 def download(url: str, progress: Callable[[float], None] | None = None) -> Path:
+    if not url.startswith("https://"):
+        raise ValueError(url)
     dest = Path(tempfile.gettempdir()) / url.rsplit("/", 1)[-1]
     req = urllib.request.Request(url, headers={"User-Agent": f"CodeReviewLocal/{__version__}"})
-    with urllib.request.urlopen(req, timeout=60) as resp, open(dest, "wb") as fh:  # noqa: S310
+    with urllib.request.urlopen(req, timeout=60) as resp, open(dest, "wb") as fh:  # nosec B310 (só https, conferido acima)
         total = int(resp.headers.get("Content-Length") or 0)
         done = 0
         while chunk := resp.read(256 * 1024):
@@ -100,8 +102,8 @@ def run_installer(setup: Path) -> None:
     if sys.platform == "win32":
         flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
         try:
-            subprocess.Popen(args, close_fds=True, creationflags=flags | subprocess.CREATE_BREAKAWAY_FROM_JOB)  # noqa: S603
+            subprocess.Popen(args, close_fds=True, creationflags=flags | subprocess.CREATE_BREAKAWAY_FROM_JOB)  # nosec B603
             return
         except OSError:  # o job do processo não permite sair dele; roda dentro mesmo
             pass
-    subprocess.Popen(args, close_fds=True, creationflags=flags)  # noqa: S603
+    subprocess.Popen(args, close_fds=True, creationflags=flags)  # nosec B603

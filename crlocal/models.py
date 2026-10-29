@@ -71,7 +71,7 @@ class Report:
         return [f for r in self.results for f in r.findings]
 
     def counts(self) -> dict[Severity, int]:
-        c = {s: 0 for s in Severity}
+        c = dict.fromkeys(Severity, 0)
         for f in self.findings:
             c[f.severity] += 1
         return c

@@ -1,18 +1,31 @@
 import re
 import shutil
+import subprocess  # nosec B404 (os testes criam repositórios git temporários)
+import sys
+import threading
+import time
+import urllib.request
 from pathlib import Path
 
 import pytest
 
-from crlocal import i18n
+from crlocal import i18n, mcp_server, sarif, updater
+from crlocal.changes import ChangesError, resolve_scope
+from crlocal.control import RunControl
+from crlocal.dedupe import merge_duplicates
 from crlocal.i18n import set_language
-from crlocal.models import Severity
+from crlocal.ignore import load as load_ignore
+from crlocal.models import Finding, Severity
 from crlocal.report import save, to_markdown
 from crlocal.runner import run_review
-from crlocal.skills import all_skills
+from crlocal.skills import all_skills, gitleaks
+from crlocal.skills.bandit_skill import _is_test
+from crlocal.skills.base import Skill
 from crlocal.skills.lizard_skill import ComplexitySkill, DuplicationSkill
 from crlocal.skills.missing_tests import MissingTestsSkill
 from crlocal.skills.patterns import PatternsSkill, load_rules
+from crlocal.tools import run
+from crlocal.updater import is_newer, parse_release, parse_version
 
 EXEMPLO = Path(__file__).resolve().parent.parent / "exemplos" / "projeto-ruim"
 
@@ -62,8 +75,6 @@ def test_projeto_sem_testes():
 
 
 def test_skill_sem_ferramenta_e_pulada_sem_quebrar(monkeypatch):
-    from crlocal.skills import gitleaks
-
     monkeypatch.setattr(gitleaks, "find_tool", lambda name: None)
     result = gitleaks.GitleaksSkill().execute(EXEMPLO, {"C#": 1})
     assert result.status == "skipped"
@@ -83,8 +94,6 @@ def test_relatorio_nos_tres_idiomas(lang, title, tmp_path):
 
 
 def test_comparacao_de_versoes():
-    from crlocal.updater import is_newer, parse_version
-
     assert parse_version("v1.2.3") == (1, 2, 3)
     assert parse_version("0.1.0-dev.7") == (0, 1, 0)
     assert is_newer("v0.2.0", "0.1.9")
@@ -96,8 +105,6 @@ def test_comparacao_de_versoes():
 
 
 def test_le_release_do_github():
-    from crlocal.updater import parse_release
-
     data = {"tag_name": "v0.3.0", "html_url": "https://github.com/x/y/releases/tag/v0.3.0", "body": "notas",
             "assets": [{"name": "CodeReviewLocal-0.3.0-portatil.zip", "browser_download_url": "zip"},
                        {"name": "CodeReviewLocal-Setup-0.3.0.exe", "browser_download_url": "https://x/setup.exe"}]}
@@ -106,9 +113,7 @@ def test_le_release_do_github():
 
 
 def test_sem_internet_nao_quebra(monkeypatch):
-    import urllib.request
 
-    from crlocal import updater
 
     def falha(*_a, **_k):
         raise OSError("sem rede")
@@ -118,10 +123,6 @@ def test_sem_internet_nao_quebra(monkeypatch):
 
 
 def test_sarif_e_problemas():
-    from crlocal import sarif
-    from crlocal.runner import run_review
-    from crlocal.skills import all_skills
-
     root = Path(__file__).resolve().parent.parent / "exemplos" / "projeto-ruim"
     report = run_review(root, [s for s in all_skills() if s.id == "padroes"])
     doc = sarif.to_sarif(report)
@@ -136,8 +137,6 @@ def test_sarif_e_problemas():
 
 
 def test_mcp_server():
-    from crlocal import mcp_server
-
     init = mcp_server.handle({"jsonrpc": "2.0", "id": 1, "method": "initialize",
                               "params": {"protocolVersion": "2025-03-26"}})
     assert init["result"]["protocolVersion"] == "2025-03-26"
@@ -161,12 +160,10 @@ def test_mcp_server():
 
 @pytest.mark.skipif(not shutil.which("git"), reason="git não instalado")
 def test_revisar_so_alteracoes(tmp_path):
-    import subprocess
 
-    from crlocal.changes import ChangesError, resolve_scope
 
     def git(*args):
-        subprocess.run(["git", "-C", str(tmp_path), "-c", "user.email=t@t", "-c", "user.name=t", *args],
+        subprocess.run(["git", "-C", str(tmp_path), "-c", "user.email=t@t", "-c", "user.name=t", *args],  # nosec B603 B607
                        check=True, capture_output=True)
 
     (tmp_path / "a.py").write_text("x = 1\n", encoding="utf-8")
@@ -191,13 +188,7 @@ def test_revisar_so_alteracoes(tmp_path):
 
 
 def test_pular_pausar_concluir(tmp_path):
-    import sys
-    import threading
-    import time
 
-    from crlocal.control import RunControl
-    from crlocal.skills.base import Skill
-    from crlocal.tools import run
 
     class Lenta(Skill):
         category = "Padrões"
@@ -231,3 +222,32 @@ def test_pular_pausar_concluir(tmp_path):
     t0 = time.monotonic()
     rep = run_review(tmp_path, [PatternsSkill()], control=ctl)
     assert time.monotonic() - t0 >= 1.4 and rep.results[0].status == "ok"
+
+
+def test_crlocalignore_e_pastas_de_build(tmp_path):
+    proj = tmp_path / "app"
+    (proj / "exemplos").mkdir(parents=True)
+    (proj / "build").mkdir()
+    (proj / "src").mkdir()
+    (proj / ".crlocalignore").write_text("# exemplo ruim de propósito\nexemplos/\n*.gerado.py\n", encoding="utf-8")
+    for f in ("exemplos/ruim.py", "build/x.py", "src/ok.py", "src/x.gerado.py"):
+        (proj / f).write_text("# TODO: algo\n", encoding="utf-8")
+    # o .crlocalignore vale também quando a pasta analisada é a de cima
+    rules = load_ignore(tmp_path)
+    assert rules.ignored("app/exemplos/ruim.py") and rules.ignored("app/build/x.py")
+    assert rules.ignored("app/src/x.gerado.py") and not rules.ignored("app/src/ok.py")
+    assert not rules.ignored("exemplos/fora.py")  # o padrão só vale abaixo da pasta do .crlocalignore
+    rep = run_review(tmp_path, [PatternsSkill()])
+    assert {f.file for f in rep.findings} == {"app/src/ok.py"}
+
+
+def test_bandit_ignora_assert_em_teste():
+    assert _is_test("projeto/tests/test_algo.py") and _is_test("conftest.py")
+    assert not _is_test("projeto/src/algo.py")
+
+
+def test_achado_repetido_na_mesma_linha_aparece_uma_vez():
+    def achado():
+        return Finding(skill="seguranca-devskim", rule_id="DS126858", message="Weak/Broken Hash Algorithm",
+                       severity=Severity.ALTA, file="a.py", line=3, category="Segurança")
+    assert len(merge_duplicates([achado(), achado()])) == 1

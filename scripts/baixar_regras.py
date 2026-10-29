@@ -16,7 +16,7 @@ DEST = Path(__file__).resolve().parent.parent / "rules" / "semgrep"
 
 def main() -> None:
     print("Baixando", URL)
-    data = urllib.request.urlopen(URL, timeout=120).read()
+    data = urllib.request.urlopen(URL, timeout=120).read()  # nosec B310 (URL fixa https)
     DEST.mkdir(parents=True, exist_ok=True)
     kept = skipped = 0
     with zipfile.ZipFile(io.BytesIO(data)) as z:

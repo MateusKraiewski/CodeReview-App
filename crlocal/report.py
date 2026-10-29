@@ -2,8 +2,8 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from html import escape as _html_escape
 from pathlib import Path
-from xml.sax.saxutils import escape
 
 from . import __version__
 from .i18n import t
@@ -13,6 +13,11 @@ CELL_MAX_CHARS = 700
 SEV_COLORS = {Severity.CRITICA: "#7f1d1d", Severity.ALTA: "#dc2626", Severity.MEDIA: "#d97706",
               Severity.BAIXA: "#2563eb", Severity.INFO: "#6b7280"}
 TOP_N = 10
+
+
+def escape(text: str) -> str:
+    """Escapa &, < e > para o Paragraph do reportlab, que lê uma marcação parecida com XML."""
+    return _html_escape(text, quote=False)
 
 
 def grade(score: int) -> str:
@@ -88,12 +93,13 @@ def to_markdown(report: Report) -> str:
 
 
 def to_pdf(report: Report, path: str | Path) -> None:
-    from reportlab.lib import colors
-    from reportlab.lib.pagesizes import A4, landscape
-    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
-    from reportlab.lib.units import mm
-    from reportlab.platypus import (KeepTogether, PageBreak, Paragraph, SimpleDocTemplate,
-                                    Spacer, Table, TableStyle)
+    # reportlab é pesado: só carrega quando um PDF é pedido
+    from reportlab.lib import colors  # noqa: PLC0415
+    from reportlab.lib.pagesizes import A4, landscape  # noqa: PLC0415
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet  # noqa: PLC0415
+    from reportlab.lib.units import mm  # noqa: PLC0415
+    from reportlab.platypus import (  # noqa: PLC0415
+        KeepTogether, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle)
 
     ss = getSampleStyleSheet()
     h1, h2 = ss["Title"], ss["Heading2"]
